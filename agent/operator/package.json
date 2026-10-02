@@ -5,7 +5,10 @@
   "scripts": {
     "prices": "bun run src/post-prices.ts",
     "prices:once": "bun run src/post-prices.ts --once",
-    "prices:dry": "bun run src/post-prices.ts --once --dry-run"
+    "prices:dry": "bun run src/post-prices.ts --once --dry-run",
+    "rounds": "bun run src/run-rounds.ts",
+    "rounds:dry": "bun run src/run-rounds.ts --dry-run",
+    "test": "bun test"
   },
   "dependencies": {
     "viem": "^2.57.2"

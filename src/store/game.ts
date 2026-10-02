@@ -8,6 +8,7 @@ import { createCommitment, reveal, type RoundCommitment, type RoundReveal } from
 import type { Hex } from "viem";
 import { sfx } from "@/lib/sound/engine";
 import { track, bucketAmount } from "@/lib/analytics/events";
+import type { ChainRoundAction } from "@/lib/web3/round-sync";
 
 export type GameMode = "practice" | "quick" | "live" | "private";
 export type Phase = "betting" | "closed" | "spinning" | "result";
@@ -35,6 +36,8 @@ export interface GameState {
   pendingReveal: RoundReveal | null;
   /** Live tables: player confirmed their slip for this round. */
   betsLocked: boolean;
+  /** Onchain round id mirrored by ChainGameDriver (null in practice/demo). */
+  chainRoundId: bigint | null;
   lastRound: RoundRecord | null;
   rounds: RoundRecord[];
   recent: number[];
@@ -57,6 +60,8 @@ export interface GameState {
   closeRound: () => void;
   onSpinComplete: () => void;
   nextRound: () => void;
+  /** Applies a chain-derived phase transition (see lib/web3/round-sync.ts). Never used by demo/practice. */
+  setChainRound: (action: ChainRoundAction) => void;
   placedBets: () => PlacedBet[];
   totalWager: () => number;
   liability: () => number;
@@ -95,6 +100,7 @@ export const useGame = create<GameState>()((set, get) => ({
   _serverSeed: null,
   pendingReveal: null,
   betsLocked: false,
+  chainRoundId: null,
   lastRound: null,
   rounds: [],
   recent: [],
@@ -105,7 +111,7 @@ export const useGame = create<GameState>()((set, get) => ({
   init: (mode, balance = 1000) => {
     if (mode === "practice") track("practice_start");
     else track("table_join", { mode });
-    set({ mode, balance, phase: "betting", bets: {}, history: [], lastBets: null, roundId: 1, rounds: [], recent: [], lastRound: null, pendingReveal: null, betsLocked: false, error: null, treasury: { ...PRACTICE_TREASURY }, stats: { spins: 0, wins: 0, largestWin: 0, streak: 0, bestStreak: 0, wagered: 0 }, ...newCommitment(1) });
+    set({ mode, balance, phase: "betting", bets: {}, history: [], lastBets: null, roundId: 1, rounds: [], recent: [], lastRound: null, pendingReveal: null, betsLocked: false, chainRoundId: null, error: null, treasury: { ...PRACTICE_TREASURY }, stats: { spins: 0, wins: 0, largestWin: 0, streak: 0, bestStreak: 0, wagered: 0 }, ...newCommitment(1) });
   },
 
   selectChip: (selectedChip) => set({ selectedChip }),
@@ -314,5 +320,40 @@ export const useGame = create<GameState>()((set, get) => ({
     if (s.phase !== "result") return;
     const roundId = s.roundId + 1;
     set({ phase: "betting", bets: {}, history: [], pendingReveal: null, betsLocked: false, roundId, error: null, ...newCommitment(roundId) });
+  },
+
+  setChainRound: (action) => {
+    const s = get();
+    switch (action.type) {
+      case "open": {
+        if (s.chainRoundId === action.roundId && s.phase === "betting") {
+          if (action.commitment && s.commitment?.commitment !== action.commitment.commitment) set({ commitment: action.commitment });
+          return;
+        }
+        set({ phase: "betting", roundId: Number(action.roundId), chainRoundId: action.roundId, bets: {}, history: [], pendingReveal: null, betsLocked: false, error: null, commitment: action.commitment, _serverSeed: null });
+        return;
+      }
+      case "close": {
+        if (s.phase !== "betting") return;
+        // Only bets confirmed on chain count; escrow was already debited when they were placed.
+        const placed = toPlaced(action.bets);
+        const total = placed.reduce((a, b) => a + b.stake, 0);
+        sfx.close();
+        set({ phase: "closed", bets: { ...action.bets }, history: [], lastBets: placed.length ? { ...action.bets } : s.lastBets, pendingReveal: null, betsLocked: placed.length > 0, error: null, stats: { ...s.stats, wagered: s.stats.wagered + total } });
+        return;
+      }
+      case "spin": {
+        if (s.phase !== "closed") return;
+        sfx.spin();
+        set({ pendingReveal: action.reveal, phase: "spinning", commitment: { roundId: action.reveal.roundId, commitment: action.reveal.commitment, playerSeed: action.reveal.playerSeed, createdAt: action.reveal.createdAt } });
+        return;
+      }
+      case "idle": {
+        if (s.phase === "spinning") return;
+        const recent = action.result != null && s.recent[0] !== action.result ? [action.result, ...s.recent].slice(0, 100) : s.recent;
+        set({ phase: "result", roundId: action.roundId == null ? s.roundId : Number(action.roundId), chainRoundId: action.roundId, bets: {}, history: [], pendingReveal: null, betsLocked: false, error: null, recent });
+        return;
+      }
+    }
   },
 }));

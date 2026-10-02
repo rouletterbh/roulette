@@ -143,7 +143,8 @@ contract Deploy is ScriptBase {
         // First public table (deployer temporarily acts as operator).
         acl.grantRole(Roles.OPERATOR_ROLE, deployer);
         game.createTable(uint128(c.tableMin), uint128(c.tableMax), false);
-        acl.revokeRole(Roles.OPERATOR_ROLE, deployer);
+        // Keep the role when the configured operator IS the deployer (single-key launches).
+        if (c.operator != deployer) acl.revokeRole(Roles.OPERATOR_ROLE, deployer);
 
         // Optional founder funding (house equity, no chips).
         if (c.initialBankroll != 0) treasury.fundBankroll{value: c.initialBankroll}();
