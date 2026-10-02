@@ -393,3 +393,62 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .glyph-idle *, .glyph-observing *, .glyph-thinking *, .glyph-executing *, .glyph-settling *, .trace-draw, .trace-flow { animation: none !important; }
 }
+
+/* ------------------------------------------------------------------
+   Atmospheric gradients: hero and section backgrounds. Light stays warm and
+   quiet; dark gets a soft acid-green rise behind the wheel with cobalt /
+   violet casts at the corners. Never flat neon.
+------------------------------------------------------------------ */
+@utility hero-glow {
+  position: relative;
+  isolation: isolate;
+}
+.hero-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 45% at 50% 92%, rgba(200, 255, 0, 0.16) 0%, rgba(200, 255, 0, 0.05) 40%, transparent 70%),
+    radial-gradient(40% 35% at 8% 18%, rgba(42, 91, 255, 0.07) 0%, transparent 65%),
+    radial-gradient(40% 35% at 94% 20%, rgba(107, 76, 255, 0.07) 0%, transparent 65%),
+    radial-gradient(70% 55% at 50% 40%, rgba(255, 255, 255, 0.55) 0%, transparent 70%),
+    linear-gradient(180deg, var(--canvas) 0%, rgba(239, 239, 232, 0.6) 100%);
+}
+[data-theme="dark"] .hero-glow::before {
+  background:
+    radial-gradient(55% 42% at 50% 94%, rgba(200, 255, 0, 0.22) 0%, rgba(200, 255, 0, 0.07) 38%, transparent 68%),
+    radial-gradient(42% 36% at 6% 12%, rgba(42, 91, 255, 0.16) 0%, transparent 62%),
+    radial-gradient(42% 36% at 96% 16%, rgba(107, 76, 255, 0.14) 0%, transparent 62%),
+    radial-gradient(70% 60% at 50% 55%, rgba(18, 22, 18, 0.9) 0%, transparent 75%),
+    linear-gradient(180deg, #070907 0%, #0a0d0a 60%, #070907 100%);
+}
+
+/* Section wash: faint warm-to-cool drift behind dense sections. */
+@utility section-wash {
+  position: relative;
+}
+.section-wash::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 60% at 100% 0%, rgba(200, 255, 0, 0.08) 0%, transparent 60%),
+    radial-gradient(50% 60% at 0% 100%, rgba(42, 91, 255, 0.05) 0%, transparent 60%);
+}
+[data-theme="dark"] .section-wash::before {
+  background:
+    radial-gradient(50% 60% at 100% 0%, rgba(200, 255, 0, 0.1) 0%, transparent 60%),
+    radial-gradient(50% 60% at 0% 100%, rgba(42, 91, 255, 0.1) 0%, transparent 60%);
+}
+
+/* Page body: a very low-contrast vertical drift so large empty areas never feel flat. */
+[data-theme="dark"] body {
+  background: linear-gradient(180deg, #070907 0%, #090c09 50%, #070907 100%) fixed;
+}
+body {
+  background: linear-gradient(180deg, #f7f7f2 0%, #f4f4ee 50%, #f7f7f2 100%) fixed;
+}

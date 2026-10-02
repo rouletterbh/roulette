@@ -1,4 +1,4 @@
-# [PROJECT_NAME] — social onchain roulette on Robinhood Chain
+# Roblette — social onchain roulette on Robinhood Chain
 
 A social roulette club where chips live onchain as ERC-1155 assets and wins can settle in crypto or supported Stock Tokens. Built as an independent product on **Robinhood Chain** (mainnet chain id 4663, testnet 46630). Not operated, endorsed or owned by Robinhood.
 

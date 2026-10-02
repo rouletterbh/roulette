@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { siteConfig } from "@/config/site";
 import { LogoMark } from "./logo";
+import { RobinhoodChainLogo } from "./brand-logo";
 
 export function Footer() {
   return (
@@ -16,7 +17,8 @@ export function Footer() {
           </p>
           <div className="mt-6 flex items-center gap-2 text-[12px] text-muted">
             <span className="live-dot" aria-hidden />
-            Built on Robinhood Chain
+            <span>Built on</span>
+            <RobinhoodChainLogo height={14} />
           </div>
         </div>
         {siteConfig.footer.map((col) => (

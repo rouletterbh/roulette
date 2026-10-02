@@ -183,7 +183,7 @@ function ConnectPrompt() {
           <WalletButton />
         </div>
         <p className="mt-8 text-[12.5px] text-faint">
-          Demo mode uses a simulated wallet. No signature is requested and no funds move.
+          No signature is requested and no funds move.
         </p>
       </div>
     </div>

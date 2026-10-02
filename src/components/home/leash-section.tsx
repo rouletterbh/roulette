@@ -4,7 +4,7 @@ import { AgentLeash } from "@/components/agent/agent-leash";
 /** "Autonomous. Not unlimited." Industrial control, four limits the agent cannot override. */
 export function LeashSection() {
   return (
-    <section className="container-edge py-20 md:py-28">
+    <section className="section-wash container-edge py-20 md:py-28">
       <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_1fr] lg:gap-20">
         <div className="relative">
           <div className="vignette overflow-hidden">

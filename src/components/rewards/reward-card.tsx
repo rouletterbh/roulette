@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import type { RewardInventory } from "@/lib/demo/rewards";
 import { cn, formatUsd } from "@/lib/utils";
+import { TokenLogo } from "@/components/layout/brand-logo";
 
 export function RewardCard({ item, className }: { item: RewardInventory; className?: string }) {
   const { token, status } = item;
@@ -9,7 +10,7 @@ export function RewardCard({ item, className }: { item: RewardInventory; classNa
     <article className={cn("flex flex-col justify-between rounded-2xl border border-border bg-surface p-5 dark:bg-elevated", status !== "available" && status !== "low" && "opacity-80", className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={cn("flex h-10 w-10 items-center justify-center rounded-full text-[11px] font-semibold", token.category === "stock-token" ? "bg-ink text-canvas" : "bg-accent text-accent-ink")}>{token.symbol.slice(0, 3)}</span>
+          <TokenLogo symbol={token.symbol} logoURI={token.logoURI} size={40} tone={token.category === "stock-token" ? "ink" : "accent"} />
           <div>
             <h3 className="text-[15px] font-medium leading-tight">{token.symbol}</h3>
             <p className="text-[12px] text-muted">{token.name}</p>

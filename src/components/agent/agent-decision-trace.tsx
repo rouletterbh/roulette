@@ -28,7 +28,7 @@ export function AgentDecisionTrace({ trace, className, compact }: { trace: Decis
     ...(trace.maxAllowed != null ? [["Maximum allowed", `${trace.maxAllowed} chips`] as [string, React.ReactNode]] : []),
     ...(trace.wager != null ? [["Agent wager", `${trace.wager} chips`] as [string, React.ReactNode]] : []),
     ...(trace.commitment ? [["Commitment", <span key="c" className="font-mono text-[11px]">{trace.commitment.slice(0, 10)}…{trace.commitment.slice(-6)}</span>] as [string, React.ReactNode]] : []),
-    ["Transaction", trace.tx ? <span key="t" className="font-mono text-[11px]">{trace.tx.slice(0, 10)}…</span> : <span key="t" className="text-faint">demo · not broadcast</span>],
+    ["Transaction", trace.tx ? <span key="t" className="font-mono text-[11px]">{trace.tx.slice(0, 10)}…</span> : <span key="t" className="text-faint">not broadcast</span>],
     ...(trace.result ? [["Result", trace.result] as [string, React.ReactNode]] : []),
     ...(trace.outcome != null ? [["Outcome", <span key="o" className={cn("tnum", trace.outcome > 0 ? "text-ink" : "text-muted")}>{trace.outcome > 0 ? "+" : ""}{trace.outcome} chips</span>] as [string, React.ReactNode]] : []),
   ];

@@ -115,7 +115,7 @@ export function AgentBuilder() {
   };
 
   return (
-    <div className="container-edge blueprint py-10 md:py-14">
+    <div className="container-edge hero-glow blueprint py-10 md:py-14">
       <div className="relative z-10 flex flex-col gap-4 border-b border-ink pb-6 md:flex-row md:items-end md:justify-between">
         <div className="flex items-center gap-5">
           <AgentGlyph seed={name || "draft"} state={liveError ? "paused" : "thinking"} size={64} className="text-ink" />

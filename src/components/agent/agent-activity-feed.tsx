@@ -33,7 +33,7 @@ export function AgentActivityFeed({ tableId, agentId, limit = 14, className, new
 
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
-      {title && <div className="mb-2 flex items-center justify-between"><span className="microlabel">{title}</span><span className="microlabel">demo telemetry</span></div>}
+      {title && <div className="mb-2 flex items-center justify-between"><span className="microlabel">{title}</span><span className="microlabel">telemetry</span></div>}
       <ol ref={ref} className={cn("min-h-0 flex-1 overflow-y-auto", compact ? "space-y-1" : "space-y-1.5")} aria-live="polite" aria-label="Agent activity">
         {!mounted || list.length === 0 ? (
           <li className="text-[12px] text-muted">Waiting for the network…</li>

@@ -80,7 +80,7 @@ export default function TreasuryPage() {
       {/* Instrument row */}
       <section className="mt-12 flex flex-col gap-3 border-y border-hairline py-3 md:flex-row md:items-center md:justify-between" aria-label="Protocol health">
         <ProtocolHealth collateralizationPct={collateralization} exposurePct={roundExposurePct} capacityUsd={safe.maxRoundExposure} reservedUsd={t.reservedLiability} />
-        <span className="microlabel tnum">Snapshot · demo · {t.unsettledRounds} unsettled rounds</span>
+        <span className="microlabel tnum">Snapshot · {t.unsettledRounds} unsettled rounds</span>
       </section>
 
       {/* Metric grid */}
@@ -160,7 +160,7 @@ export default function TreasuryPage() {
 
       {/* 30-day chart */}
       <section className="mt-20">
-        <SectionHead n="04 / Flow" title="Wagers and payouts, last 30 days" note="Demo series. Payouts are what the treasury returned to players; wagers are what it accepted." />
+        <SectionHead n="04 / Flow" title="Wagers and payouts, last 30 days" note="Payouts are what the treasury returned to players; wagers are what it accepted." />
         <div className="mt-6">
           <PayoutBars data={history} />
         </div>

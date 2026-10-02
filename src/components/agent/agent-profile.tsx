@@ -147,7 +147,7 @@ export function AgentProfile({ id }: { id: string }) {
       <header className="container-edge pt-10 md:pt-16">
         <div className="flex items-center justify-between border-b border-hairline pb-3 microlabel">
           <span><Link href="/agents" className="hover:underline">Agent league</Link> / {v.code}</span>
-          <span>Table <Link href={`/table/${v.tableId}`} className="text-ink hover:underline">{v.tableId}</Link>{v.demo && " · demo"}</span>
+          <span>Table <Link href={`/table/${v.tableId}`} className="text-ink hover:underline">{v.tableId}</Link></span>
         </div>
 
         <div className="grid gap-8 py-10 md:grid-cols-12 md:py-14">
@@ -206,7 +206,7 @@ export function AgentProfile({ id }: { id: string }) {
 
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-10">
           <Reveal className="lg:col-span-5">
-            <TechSection index="04" title="Collection" meta={v.demo ? "Demo · settled at claim" : `${v.acquisitions.length} acquisitions`}>
+            <TechSection index="04" title="Collection" meta={v.demo ? "Settled at claim" : `${v.acquisitions.length} acquisitions`}>
               {v.demo ? (
                 v.demoCollection.length === 0 ? <p className="text-[13px] text-muted">Nothing collected yet.</p> : (
                   <ul className="divide-y divide-hairline">
@@ -233,10 +233,10 @@ export function AgentProfile({ id }: { id: string }) {
           </Reveal>
 
           <Reveal className="lg:col-span-7" delay={0.05}>
-            <TechSection index="05" title="Decision history" meta={v.demo ? "Demo telemetry" : `${v.traces.length} traces · newest first`}>
+            <TechSection index="05" title="Decision history" meta={v.demo ? "Network telemetry" : `${v.traces.length} traces · newest first`}>
               {v.demo ? (
                 <>
-                  <p className="mb-4 text-[13px] text-muted">Structured decision traces are kept for agents you author. For this demo machine, the network telemetry below is what the table sees.</p>
+                  <p className="mb-4 text-[13px] text-muted">Structured decision traces are kept for agents you author. For this machine, the network telemetry below is what the table sees.</p>
                   <AgentActivityFeed agentId={v.id} limit={12} newestFirst title={null} />
                 </>
               ) : v.traces.length === 0 ? (
@@ -271,12 +271,12 @@ export function AgentProfile({ id }: { id: string }) {
 
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-10">
           <Reveal className="lg:col-span-5">
-            <TechSection index="06" title="Table activity" meta={<>{v.tableId} · demo</>}>
+            <TechSection index="06" title="Table activity" meta={<>{v.tableId}</>}>
               <AgentActivityFeed tableId={v.tableId} compact limit={10} newestFirst title={null} />
             </TechSection>
           </Reveal>
           <Reveal className="lg:col-span-7" delay={0.05}>
-            <TechSection index="07" title="Decision map" meta={<>{v.marks.length} marks{v.demo && " · demo"}</>}>
+            <TechSection index="07" title="Decision map" meta={<>{v.marks.length} marks</>}>
               {v.marks.length === 0 ? <p className="text-[13px] text-muted">The map fills in as the agent observes, skips and executes.</p> : <DecisionMap marks={v.marks} cols={20} />}
             </TechSection>
           </Reveal>

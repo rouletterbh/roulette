@@ -28,7 +28,7 @@ export function DecisionTraceSection() {
   }, [reduce]);
   const cur = reduce ? STEPS.length - 1 : Math.min(i, STEPS.length - 1);
   return (
-    <section className="border-y border-hairline bg-sunken/40 dark:bg-elevated/30">
+    <section className="section-wash border-y border-hairline bg-sunken/40 dark:bg-elevated/30">
       <div className="container-edge grid gap-12 py-20 md:py-28 lg:grid-cols-[1fr_1.2fr] lg:gap-20">
         <div>
           <Eyebrow className="mb-4 block">Decision trace</Eyebrow>

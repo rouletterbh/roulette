@@ -45,7 +45,7 @@ export function ArchitectureStrip({ className }: { className?: string }) {
       </div>
       <figcaption className="relative z-10 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-hairline px-4 py-2">
         <span className="microlabel">Intents carry to · chainId · data · abi · description</span>
-        <span className="microlabel">Demo · Testnet</span>
+        <span className="microlabel">Testnet</span>
       </figcaption>
     </figure>
   );

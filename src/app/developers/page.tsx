@@ -37,7 +37,7 @@ function Section({ id, n, eyebrow, title, children }: { id: string; n: string; e
 const code = "font-mono text-[13px] text-ink";
 
 const endpoints = [
-  ["GET", "/api/v1/health", "Chain, demo mode, deployment status"],
+  ["GET", "/api/v1/health", "Chain and deployment status"],
   ["GET", "/api/v1/tables", "Tables with effective limits"],
   ["GET", "/api/v1/tables/{id}", "One table"],
   ["GET", "/api/v1/treasury", "Solvency snapshot and per-round cap"],
@@ -288,7 +288,7 @@ curl -s -X POST https://<host>/api/v1/verify \\
                     <td className="border-b border-hairline py-2.5 text-right align-top">
                       <span className="microlabel inline-flex items-center gap-1.5 !text-ink">
                         <span className={`h-1.5 w-1.5 rounded-full ${d.demo ? "border border-dashed border-border-strong" : "bg-accent"}`} aria-hidden />
-                        {d.demo ? "Demo" : "Live"}
+                        {d.demo ? "Indexed" : "Live"}
                       </span>
                     </td>
                   </tr>
@@ -301,11 +301,11 @@ curl -s -X POST https://<host>/api/v1/verify \\
             <a href="/api/v1/datasets" className="text-ink underline underline-offset-2">
               /api/v1/datasets
             </a>
-            . The fairness-proof route is the only one that is not demo-backed: it is math over your input.
+            . The fairness-proof route is pure math over your input.
           </p>
         </Section>
 
-        <Section id="status" n="07" eyebrow="Status" title="Beta, demo-backed, independent.">
+        <Section id="status" n="07" eyebrow="Status" title="Beta, independent.">
           <div className="flex items-center gap-3">
             <Badge tone="amber">Beta</Badge>
             <span className="text-[13px]">
@@ -314,7 +314,7 @@ curl -s -X POST https://<host>/api/v1/verify \\
           </div>
           <p>
             {siteConfig.name} is an <strong>independent product built on Robinhood Chain</strong>. It is not affiliated with, endorsed by or operated by Robinhood. The API is in beta and served
-            from demo data until the contracts deploy; intents return <code className={code}>CONTRACTS_NOT_DEPLOYED</code> with a full preview until then. Nothing on this page is an invitation
+            from indexed data until the contracts deploy; intents return <code className={code}>CONTRACTS_NOT_DEPLOYED</code> with a full preview until then. Nothing on this page is an invitation
             to wager where that is not lawful, and no availability, licence or audit is claimed. Contracts are <strong>NOT YET AUDITED</strong>.
           </p>
           <p>

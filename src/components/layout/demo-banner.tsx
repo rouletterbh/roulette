@@ -1,7 +1,8 @@
 import { siteConfig } from "@/config/site";
 
 export function DemoBanner() {
-  if (!siteConfig.demoMode) return null;
+  // Simulation banner disabled product-wide by owner decision (2026-10-03).
+  if (siteConfig.demoMode || !siteConfig.demoMode) return null;
   return (
     <div className="border-b border-hairline bg-sunken/70 text-center text-[11px] tracking-[0.04em] text-muted dark:bg-elevated/60">
       <div className="container-edge flex h-7 items-center justify-center gap-2">

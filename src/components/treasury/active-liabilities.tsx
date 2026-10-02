@@ -62,7 +62,7 @@ export function ActiveLiabilities({ capUsd, className }: { capUsd: number; class
               Total open exposure
             </td>
             <td className="py-2.5 text-right font-mono text-[12px] tnum text-ink">{mounted && rows.length ? formatUsd(total) : "—"}</td>
-            <td className="py-2.5 text-right microlabel">demo</td>
+            <td className="py-2.5 text-right microlabel"></td>
           </tr>
         </tfoot>
       </table>

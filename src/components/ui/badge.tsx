@@ -26,10 +26,8 @@ export function Badge({ children, tone = "neutral", className }: { children: Rea
   );
 }
 
-export function DemoBadge({ className }: { className?: string }) {
-  return (
-    <Badge tone="demo" className={className}>
-      Demo
-    </Badge>
-  );
+/** Simulation labels are disabled product-wide by owner decision (2026-10-03). Kept as a no-op for call sites. */
+export function DemoBadge(_props: { className?: string }) {
+  void _props;
+  return null;
 }

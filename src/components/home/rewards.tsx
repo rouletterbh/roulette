@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { rewardRegistry, type RewardToken } from "@/config/tokens";
 import { siteConfig } from "@/config/site";
 import { cn } from "@/lib/utils";
+import { TokenLogo } from "@/components/layout/brand-logo";
 
 const statusLabel: Record<RewardToken["liquidityStatus"], string> = {
   available: "Available",
@@ -45,14 +46,7 @@ export function RewardsSection() {
               href="/rewards"
               className="flex items-center gap-3 rounded-full border border-border bg-surface py-2 pl-2 pr-4 text-[13px] dark:bg-elevated"
             >
-              <span
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold",
-                  t.category === "stock-token" ? "bg-ink text-canvas" : "bg-accent text-accent-ink",
-                )}
-              >
-                {t.symbol.slice(0, 2)}
-              </span>
+              <TokenLogo symbol={t.symbol} logoURI={t.logoURI} size={28} tone={t.category === "stock-token" ? "ink" : "accent"} />
               <span className="font-medium">{t.symbol}</span>
               <span className="text-muted">{t.category === "stock-token" ? "Stock Token" : "Robinhood Chain"}</span>
               <span className={cn("h-1.5 w-1.5 rounded-full", t.liquidityStatus === "available" ? "bg-accent" : t.liquidityStatus === "low" ? "bg-amber" : "bg-faint")} aria-hidden />

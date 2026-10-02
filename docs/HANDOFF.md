@@ -1,6 +1,6 @@
 # Project handoff — paste this into any assistant to bring it up to speed
 
-**Project:** [PROJECT_NAME] (working name "Wheelhouse"; name is configurable via `NEXT_PUBLIC_PROJECT_NAME`). A social onchain roulette platform on **Robinhood Chain** (mainnet chain id 4663, testnet 46630, gas asset ETH). Independent product; no Robinhood affiliation may be implied. Approved terms: "Robinhood Chain", "Stock Tokens". Never: tokenized stocks/equities, "Hood Chain", promises of profit/returns/yield.
+**Project:** Roblette (set via `NEXT_PUBLIC_PROJECT_NAME`; decided 2026-10-03). A social onchain roulette platform on **Robinhood Chain** (mainnet chain id 4663, testnet 46630, gas asset ETH). Independent product; no Robinhood affiliation may be implied. Approved terms: "Robinhood Chain", "Stock Tokens". Never: tokenized stocks/equities, "Hood Chain", promises of profit/returns/yield.
 
 **Repo:** github.com/rouletterbh/roulette (branch `main`), deployed on Vercel. Stack: Next.js 16 (App Router), React 19, Tailwind v4, motion, zustand, viem/wagmi, zod, Bun. Contracts: Solidity 0.8.26 + OpenZeppelin 5, Foundry. Tests: vitest (74) + forge (141), all passing. Demo mode is on (`NEXT_PUBLIC_DEMO_MODE=true`): wallet, balances, tables, treasury and league data are simulated and labeled DEMO.
 

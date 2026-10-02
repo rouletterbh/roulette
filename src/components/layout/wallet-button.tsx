@@ -53,7 +53,7 @@ export function WalletButton({ className, size = "md" }: { className?: string; s
       >
         <PlayerAvatar address={address!} size={28} />
         <span className="tnum">{ensName ?? shortAddress(address!)}</span>
-        {isDemo && <span className="rounded-full border border-dashed border-border-strong px-1.5 text-[9px] uppercase tracking-[0.14em] text-muted">Demo</span>}
+        {isDemo && null}
       </button>
       <AnimatePresence>
         {open && (

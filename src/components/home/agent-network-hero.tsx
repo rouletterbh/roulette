@@ -170,7 +170,7 @@ export function AgentNetworkHero() {
           </ol>
         </div>
       </div>
-      <p className="mt-4 text-center microlabel md:absolute md:bottom-0 md:right-0 md:mt-0 md:text-right">demo telemetry · results scripted, never from the animation</p>
+      <p className="mt-4 text-center microlabel md:absolute md:bottom-0 md:right-0 md:mt-0 md:text-right">results are committed before the wheel moves</p>
     </div>
   );
 }

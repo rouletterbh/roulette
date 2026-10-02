@@ -3,7 +3,7 @@
  * set NEXT_PUBLIC_PROJECT_NAME to rename everywhere at once.
  */
 export const siteConfig = {
-  name: process.env.NEXT_PUBLIC_PROJECT_NAME ?? "[PROJECT_NAME]",
+  name: process.env.NEXT_PUBLIC_PROJECT_NAME ?? "Roblette",
   tagline: "A social roulette club where chips live onchain.",
   description:
     "A social roulette club on Robinhood Chain. Chips live onchain as ERC-1155 assets and rewards can settle in crypto and supported Stock Tokens.",

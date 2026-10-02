@@ -19,7 +19,7 @@ export function Hero() {
   useEffect(() => track("landing_view"), []);
 
   return (
-    <section className="relative overflow-hidden blueprint">
+    <section className="relative overflow-hidden hero-glow blueprint">
       <div className="container-edge relative z-10 flex flex-col items-center pt-16 text-center md:pt-24 lg:pt-28">
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease }}>
           <Eyebrow live>Live on Robinhood Chain</Eyebrow>

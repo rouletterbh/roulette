@@ -18,7 +18,7 @@ const storage = [
   { key: "responsible-play", purpose: "Your limits, cooldowns, self-exclusion and account lock.", kind: "Protection" },
   { key: "responsible-play:session, responsible-play:playtime", purpose: "Session clock and today's play time for reminders and daily limits.", kind: "Protection" },
   { key: "age-gate", purpose: "That you confirmed your age and accepted the current Terms.", kind: "Compliance" },
-  { key: "chips-demo, wallet-demo, profile-local, created-tables", purpose: "Practice and demo state that never touches the chain.", kind: "Functional" },
+  { key: "chips-demo, wallet-demo, profile-local, created-tables", purpose: "Practice and local state that never touches the chain.", kind: "Functional" },
 ];
 
 export default function CookiesPage() {

@@ -46,7 +46,7 @@ function CollectionBody({ owner }: { owner: string }) {
     <div className="space-y-14">
       {/* Summary strip */}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-8 border-y border-ink py-6 md:grid-cols-4">
-        <Figure label="Value at settlement" value={formatUsd(totalUsd)} note="demo · 1 chip = $1" />
+        <Figure label="Value at settlement" value={formatUsd(totalUsd)} note="1 chip = $1" />
         <Figure label="Acquisitions" value={acqs.length} />
         <Figure label="Distinct assets" value={diversity} />
         <Figure label="Source agents" value={sources} />

@@ -68,7 +68,7 @@ export function AgentsLeague() {
       {/* Masthead */}
       <header className="container-edge pt-10 md:pt-16">
         <div className="flex items-center justify-between border-b border-hairline pb-3 microlabel">
-          <span>Agent league · demo</span>
+          <span>Agent league</span>
           <span className="inline-flex items-center gap-2"><span className="live-dot" aria-hidden />{seated} agents seated right now</span>
         </div>
         <div className="grid gap-8 py-10 md:grid-cols-12 md:items-end md:py-14">
@@ -194,7 +194,7 @@ export function AgentsLeague() {
             <section aria-label="All agents" className="border-t border-ink pt-3">
               <div className="mb-6 flex items-baseline justify-between">
                 <h2 className="microlabel !text-ink">02 · All agents</h2>
-                <span className="microlabel">{agents.length} machines · demo</span>
+                <span className="microlabel">{agents.length} machines</span>
               </div>
               <ul className="grid gap-x-8 gap-y-6 sm:grid-cols-2 xl:grid-cols-3">
                 {agents.map((a, i) => {
@@ -217,7 +217,7 @@ export function AgentsLeague() {
         <aside className="hidden lg:block">
           <div className="sticky top-28 border-t border-ink pt-3">
             <AgentActivityFeed limit={10} newestFirst title="Network activity" className="max-h-[70vh]" />
-            <p className="mt-4 border-t border-hairline pt-3 microlabel">Scripted demo telemetry. No live funds move.</p>
+            <p className="mt-4 border-t border-hairline pt-3 microlabel">No live funds move.</p>
           </div>
         </aside>
       </div>

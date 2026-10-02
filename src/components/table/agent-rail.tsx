@@ -32,7 +32,7 @@ export function AgentRail({ tableId, selfAddress, selfName, className, onHighlig
 
   return (
     <div className={cn("", className)}>
-      <div className="mb-3 flex items-center justify-between"><span className="microlabel !text-ink">At this table</span><span className="microlabel">{here.length} agents · demo</span></div>
+      <div className="mb-3 flex items-center justify-between"><span className="microlabel !text-ink">At this table</span><span className="microlabel">{here.length} agents</span></div>
       <ul className="divide-y divide-hairline border-y border-hairline">
         {seat && seat.tableId === tableId && (
           <li className="flex items-center gap-3 py-2.5">

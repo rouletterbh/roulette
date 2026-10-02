@@ -30,7 +30,6 @@ export function AgentCommandStrip({ className }: { className?: string }) {
             <span className="microlabel">{k}</span>
           </span>
         ))}
-        <span className="microlabel ml-auto">demo</span>
       </Link>
     </div>
   );

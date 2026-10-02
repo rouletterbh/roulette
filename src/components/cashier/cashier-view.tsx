@@ -203,7 +203,7 @@ export function CashierView() {
             )}
             <div className="mt-6 border-t border-hairline pt-4 text-[12px] text-muted">
               <Badge tone="outline" className="mb-2">Testnet</Badge>
-              <p>Demo transactions are simulated locally with a fake hash. Explorer links resolve once contracts are deployed on Robinhood Chain.</p>
+              <p>Explorer links resolve once contracts are deployed on Robinhood Chain.</p>
             </div>
           </aside>
         </div>

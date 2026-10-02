@@ -70,7 +70,7 @@ export function TableCard({ table, className }: { table: DemoTable; className?: 
           <span className={cn("microlabel", !locked && "!text-ink")}>{locked ? "European · Locked" : "European"}</span>
         </div>
         <span className="microlabel tnum">
-          {table.speed} · {table.minBet}–{table.maxBet} · demo
+          {table.speed} · {table.minBet}–{table.maxBet}
         </span>
       </div>
 
