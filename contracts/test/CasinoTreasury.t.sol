@@ -64,7 +64,7 @@ contract CasinoTreasuryTest is Fixture {
 
     function test_deposit_pausedReverts() public {
         vm.prank(pauser);
-        treasury.pause(treasury.PAUSE_DEPOSITS());
+        treasury.pause(PAUSE_DEPOSITS);
         vm.deal(alice, 1 ether);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(EmergencyPause.EnforcedPause.selector, uint8(1)));
@@ -117,7 +117,7 @@ contract CasinoTreasuryTest is Fixture {
         buyChips(alice, 1 ether);
         (uint256[] memory ids, uint256[] memory amts) = heldChips(alice);
         vm.prank(pauser);
-        treasury.pause(treasury.PAUSE_WITHDRAWALS());
+        treasury.pause(PAUSE_WITHDRAWALS);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(EmergencyPause.EnforcedPause.selector, uint8(8)));
         treasury.redeem(ids, amts);

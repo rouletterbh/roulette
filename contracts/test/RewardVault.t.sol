@@ -128,7 +128,7 @@ contract RewardVaultTest is Fixture {
 
     function test_claim_pausedReverts() public {
         vm.prank(pauser);
-        vault.pause(vault.PAUSE_CLAIMS());
+        vault.pause(PAUSE_CLAIMS);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(EmergencyPause.EnforcedPause.selector, uint8(4)));
         vault.claimAs(address(token), 10e18, 0, deadline);

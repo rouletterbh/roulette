@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {RiskEngine} from "../src/RiskEngine.sol";
+
 import {Fixture} from "./utils/Fixture.sol";
 import {RouletteGame} from "../src/RouletteGame.sol";
 import {CasinoTreasury} from "../src/CasinoTreasury.sol";
@@ -102,9 +104,9 @@ contract RouletteGameTest is Fixture {
 
     function test_placeBets_hedgedBetsReleaseReservation() public {
         openRound(1, SEED);
-        placeAs(alice, 1, one(bet(risk.MASK_RED(), 1, 100)));
+        placeAs(alice, 1, one(bet(MASK_RED, 1, 100)));
         assertEq(treasury.reservedUnits(), 100);
-        placeAs(bob, 1, one(bet(risk.MASK_BLACK(), 1, 100)));
+        placeAs(bob, 1, one(bet(MASK_BLACK, 1, 100)));
         assertEq(treasury.reservedUnits(), 0, "red + black net liability is zero");
         assertEq(game.getRound(1).reservedUnits, 0);
     }
@@ -113,17 +115,17 @@ contract RouletteGameTest is Fixture {
         openRound(1, SEED);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(RouletteGame.StakeOutOfRange.selector, 0, uint128(10_001), uint128(1), uint128(10_000)));
-        game.placeBets(1, one(bet(risk.MASK_RED(), 1, 10_001)));
+        game.placeBets(1, one(bet(MASK_RED, 1, 10_001)));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(RouletteGame.StakeOutOfRange.selector, 0, uint128(0), uint128(1), uint128(10_000)));
-        game.placeBets(1, one(bet(risk.MASK_RED(), 1, 0)));
+        game.placeBets(1, one(bet(MASK_RED, 1, 0)));
     }
 
     function test_placeBets_insufficientEscrow() public {
         openRound(1, SEED);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(RouletteGame.InsufficientEscrow.selector, 7001, 7000));
-        game.placeBets(1, one(bet(risk.MASK_RED(), 1, 7001)));
+        game.placeBets(1, one(bet(MASK_RED, 1, 7001)));
     }
 
     function test_placeBets_invalidGeometryReverts() public {
@@ -142,7 +144,7 @@ contract RouletteGameTest is Fixture {
                 RouletteGame.InvalidRoundStatus.selector, 1, RouletteGame.RoundStatus.Closed, RouletteGame.RoundStatus.Open
             )
         );
-        game.placeBets(1, one(bet(risk.MASK_RED(), 1, 1)));
+        game.placeBets(1, one(bet(MASK_RED, 1, 1)));
     }
 
     function test_placeBets_noBetsReverts() public {
@@ -168,10 +170,10 @@ contract RouletteGameTest is Fixture {
     function test_placeBets_gameplayPaused() public {
         openRound(1, SEED);
         vm.prank(pauser);
-        game.pause(game.PAUSE_GAMEPLAY());
+        game.pause(PAUSE_GAMEPLAY);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(EmergencyPause.EnforcedPause.selector, uint8(2)));
-        game.placeBets(1, one(bet(risk.MASK_RED(), 1, 1)));
+        game.placeBets(1, one(bet(MASK_RED, 1, 1)));
     }
 
     // ------------------------------------------------------------- settlement
@@ -179,8 +181,8 @@ contract RouletteGameTest is Fixture {
     function test_settle_creditsWinnersReleasesReservationAndSettlesTreasury() public {
         openRound(1, SEED);
         IRiskEngine.Bet[] memory bets = new IRiskEngine.Bet[](3);
-        bets[0] = bet(risk.MASK_RED(), 1, 10);
-        bets[1] = bet(risk.MASK_BLACK(), 1, 10);
+        bets[0] = bet(MASK_RED, 1, 10);
+        bets[1] = bet(MASK_BLACK, 1, 10);
         bets[2] = bet(straightMask(0), 35, 10);
         placeAs(alice, 1, bets);
         assertEq(treasury.reservedUnits(), 330, "worst case is zero: 360 - 30 staked");
@@ -216,7 +218,7 @@ contract RouletteGameTest is Fixture {
     }
 
     function test_settle_twiceReverts() public {
-        playRound(1, SEED, alice, one(bet(risk.MASK_RED(), 1, 10)));
+        playRound(1, SEED, alice, one(bet(MASK_RED, 1, 10)));
         vm.expectRevert(
             abi.encodeWithSelector(
                 RouletteGame.InvalidRoundStatus.selector, 1, RouletteGame.RoundStatus.Settled, RouletteGame.RoundStatus.Closed
@@ -227,7 +229,7 @@ contract RouletteGameTest is Fixture {
 
     function test_settle_beforeRevealReverts() public {
         openRound(1, SEED);
-        placeAs(alice, 1, one(bet(risk.MASK_RED(), 1, 10)));
+        placeAs(alice, 1, one(bet(MASK_RED, 1, 10)));
         closeRound(1);
         vm.expectRevert(abi.encodeWithSelector(RouletteGame.ResultNotAvailable.selector, 1));
         game.settleRound(1);
@@ -245,7 +247,7 @@ contract RouletteGameTest is Fixture {
 
     function test_settle_anyoneCanCall() public {
         openRound(1, SEED);
-        placeAs(alice, 1, one(bet(risk.MASK_RED(), 1, 10)));
+        placeAs(alice, 1, one(bet(MASK_RED, 1, 10)));
         closeAndReveal(1, SEED);
         vm.prank(stranger);
         game.settleRound(1);
@@ -268,7 +270,7 @@ contract RouletteGameTest is Fixture {
     function test_void_expiredWindowRefundsEveryStake() public {
         openRound(1, SEED);
         placeAs(alice, 1, one(bet(straightMask(5), 35, 10)));
-        placeAs(bob, 1, one(bet(risk.MASK_RED(), 1, 20)));
+        placeAs(bob, 1, one(bet(MASK_RED, 1, 20)));
         closeRound(1);
         vm.roll(randomness.revealAfterBlock(1) + 300);
 
@@ -364,7 +366,7 @@ contract RouletteGameTest is Fixture {
 
     function test_leaveTable_worksWhileGameplayPaused() public {
         vm.prank(pauser);
-        game.pause(game.PAUSE_ALL());
+        game.pause(PAUSE_ALL);
         vm.prank(alice);
         game.leaveTable(7000);
         assertEq(chipUnitsOf(alice), 7000);
@@ -373,7 +375,7 @@ contract RouletteGameTest is Fixture {
     function test_enterTable_pausedReverts() public {
         buyChips(carol, 1 ether);
         vm.prank(pauser);
-        game.pause(game.PAUSE_GAMEPLAY());
+        game.pause(PAUSE_GAMEPLAY);
         (uint256[] memory ids, uint256[] memory amts) = heldChips(carol);
         vm.prank(carol);
         vm.expectRevert(abi.encodeWithSelector(EmergencyPause.EnforcedPause.selector, uint8(2)));
@@ -384,7 +386,7 @@ contract RouletteGameTest is Fixture {
         // The only paths that change escrow are the player's own calls and settlement.
         // Pausing everything leaves balances untouched and leaveTable still works (see above).
         vm.prank(pauser);
-        game.pause(game.PAUSE_ALL());
+        game.pause(PAUSE_ALL);
         assertEq(game.escrow(alice), 7000);
         assertEq(game.escrow(bob), 7000);
     }
@@ -426,10 +428,10 @@ contract RouletteGameTest is Fixture {
     function test_playerSeedFoldsEveryBet() public {
         openRound(1, SEED);
         bytes32 before = game.getRound(1).playerSeed;
-        placeAs(alice, 1, one(bet(risk.MASK_RED(), 1, 10)));
+        placeAs(alice, 1, one(bet(MASK_RED, 1, 10)));
         bytes32 after1 = game.getRound(1).playerSeed;
         assertTrue(before != after1);
-        assertEq(after1, keccak256(abi.encodePacked(before, alice, risk.MASK_RED(), uint16(1), uint128(10))));
+        assertEq(after1, keccak256(abi.encodePacked(before, alice, MASK_RED, uint16(1), uint128(10))));
     }
 
     function test_adminConfigBounds() public {

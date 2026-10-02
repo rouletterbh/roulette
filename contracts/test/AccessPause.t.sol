@@ -73,25 +73,25 @@ contract AccessPauseTest is Fixture {
 
     function test_pauserRaisesAdminLowers() public {
         vm.prank(pauser);
-        treasury.pause(treasury.PAUSE_DEPOSITS() | treasury.PAUSE_WITHDRAWALS());
-        assertTrue(treasury.isPaused(treasury.PAUSE_DEPOSITS()));
-        assertTrue(treasury.isPaused(treasury.PAUSE_WITHDRAWALS()));
-        assertFalse(treasury.isPaused(treasury.PAUSE_GAMEPLAY()));
+        treasury.pause(PAUSE_DEPOSITS | PAUSE_WITHDRAWALS);
+        assertTrue(treasury.isPaused(PAUSE_DEPOSITS));
+        assertTrue(treasury.isPaused(PAUSE_WITHDRAWALS));
+        assertFalse(treasury.isPaused(PAUSE_GAMEPLAY));
 
         vm.prank(pauser);
         vm.expectRevert(abi.encodeWithSelector(RoleGated.Unauthorized.selector, Roles.ADMIN_ROLE, pauser));
-        treasury.unpause(treasury.PAUSE_DEPOSITS());
+        treasury.unpause(PAUSE_DEPOSITS);
 
-        treasury.unpause(treasury.PAUSE_DEPOSITS());
-        assertFalse(treasury.isPaused(treasury.PAUSE_DEPOSITS()));
-        assertTrue(treasury.isPaused(treasury.PAUSE_WITHDRAWALS()));
+        treasury.unpause(PAUSE_DEPOSITS);
+        assertFalse(treasury.isPaused(PAUSE_DEPOSITS));
+        assertTrue(treasury.isPaused(PAUSE_WITHDRAWALS));
         assertEq(treasury.pauseFlags(), 8);
     }
 
     function test_strangerCannotPause() public {
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(RoleGated.Unauthorized.selector, Roles.PAUSER_ROLE, stranger));
-        game.pause(game.PAUSE_GAMEPLAY());
+        game.pause(PAUSE_GAMEPLAY);
     }
 
     function test_invalidFlagsRejected() public {
@@ -105,15 +105,15 @@ contract AccessPauseTest is Fixture {
 
     function test_pauseAllThenDrillUnpause() public {
         vm.prank(pauser);
-        vault.pause(vault.PAUSE_ALL());
+        vault.pause(PAUSE_ALL);
         assertEq(vault.pauseFlags(), 0x0f);
-        vault.unpause(vault.PAUSE_ALL());
+        vault.unpause(PAUSE_ALL);
         assertEq(vault.pauseFlags(), 0);
     }
 
     function test_flagsAreIndependentPerContract() public {
         vm.prank(pauser);
-        treasury.pause(treasury.PAUSE_ALL());
+        treasury.pause(PAUSE_ALL);
         assertEq(game.pauseFlags(), 0);
         assertEq(vault.pauseFlags(), 0);
     }

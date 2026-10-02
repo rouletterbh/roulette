@@ -37,6 +37,22 @@ abstract contract Fixture is BaseTest {
     Chip1155 internal chip;
     CasinoTreasury internal treasury;
     RiskEngine internal risk;
+
+    // Pause flags mirror EmergencyPause. Kept as test constants so that
+    // vm.prank / vm.expectRevert are not consumed by a getter call.
+    uint8 internal constant PAUSE_DEPOSITS = 1 << 0;
+    uint8 internal constant PAUSE_GAMEPLAY = 1 << 1;
+    uint8 internal constant PAUSE_CLAIMS = 1 << 2;
+    uint8 internal constant PAUSE_WITHDRAWALS = 1 << 3;
+    uint8 internal constant PAUSE_ALL = PAUSE_DEPOSITS | PAUSE_GAMEPLAY | PAUSE_CLAIMS | PAUSE_WITHDRAWALS;
+
+    // Outside-bet masks read once from the engine (storage reads are not external calls).
+    uint64 internal MASK_RED;
+    uint64 internal MASK_BLACK;
+    uint64 internal MASK_ODD;
+    uint64 internal MASK_EVEN;
+    uint64 internal MASK_LOW;
+    uint64 internal MASK_HIGH;
     RandomnessManager internal randomness;
     RouletteGame internal game;
     RewardVault internal vault;
@@ -63,6 +79,12 @@ abstract contract Fixture is BaseTest {
             CasinoTreasury.RiskConfig({safetyReserveBps: 1500, maxRoundExposureBps: 2500})
         );
         risk = new RiskEngine();
+        MASK_RED = risk.MASK_RED();
+        MASK_BLACK = risk.MASK_BLACK();
+        MASK_ODD = risk.MASK_ODD();
+        MASK_EVEN = risk.MASK_EVEN();
+        MASK_LOW = risk.MASK_LOW();
+        MASK_HIGH = risk.MASK_HIGH();
         randomness = new RandomnessManager(address(acl), REVEAL_DELAY);
         game = new RouletteGame(address(acl), address(risk), address(treasury), address(randomness), MIN_BANKROLL_TO_OPEN);
         vault = new RewardVault(address(acl));

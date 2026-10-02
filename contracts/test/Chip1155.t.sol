@@ -127,7 +127,8 @@ contract Chip1155Test is Fixture {
         assertEq(chip.totalUnits(), 200);
         assertEq(chip.totalSupply(1100), 1);
         assertEq(chip.totalSupply(1050), 1);
-        assertEq(chip.totalSupply(1005), 2);
+        assertEq(chip.totalSupply(1010), 2); // 45 = 25 + 10 + 10 (greedy)
+        assertEq(chip.totalSupply(1005), 1);
 
         vm.prank(bob);
         chip.setApprovalForAll(minter, true);
