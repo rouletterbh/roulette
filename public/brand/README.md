@@ -10,3 +10,4 @@ Slots render a text/monogram fallback until the file exists. Also set `logoURI` 
 
 ## Provenance
 - `robinhood-chain.svg` / `robinhood-chain-dark.svg`: the official Robinhood feather mark as served by Robinhood's CDN for the Robinhood Chain documentation site (`cdn.robinhood.com/assets/generated_assets/hoodchain_docsite/feather-{dark,light}.svg`), fetched 2026-10-03 with the owner's stated permission from Robinhood Chain. The mark is used only beside the words "Robinhood Chain" to identify the network; never stylized or recolored.
+- `tokens/ETH.svg`: ethereum.org brand asset (eth-diamond-purple, works on light and dark). `tokens/CASHCAT.png`, `tokens/PONS.png`, `tokens/AI.png`: the artwork each token lists on the Robinhood Chain Blockscout explorer (served via CoinGecko), fetched 2026-10-03 at the owner's request. Stock Token symbols have no logo on purpose (third-party trademarks; no Robinhood-issued contracts listed under those symbols on the explorer yet).
