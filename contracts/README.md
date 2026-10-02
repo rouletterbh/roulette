@@ -369,3 +369,31 @@ temporarily, register reward assets and their oracles, re-price chips only while
   second price axis for chip backing and is left as a follow-up.
 * **`RiskEngine` is a contract, not a library** — callable offchain for UI quotes
   (`maxSafeStake`, `maximumLiability`) and referenced immutably by the game.
+
+## Reward oracle and inventory (CASHCAT, PONS, AI)
+
+Confirmed Robinhood Chain contracts (owner, 2026-10-03):
+
+| Asset | Contract |
+|---|---|
+| CASHCAT | `0x020bfC650A365f8BB26819deAAbF3E21291018b4` |
+| PONS | `0x39dBED3a2bd333467115dE45665cC57F813C4571` |
+| AI (Artificial Inu) | `0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18` |
+
+None has an onchain price feed, so `src/PostedPriceOracle.sol` implements `IPriceOracle` with operator-posted prices: role-gated, monotonic timestamps, never in the future, per-update deviation cap (default 20%, admin-adjustable up to 50%), admin `forcePrice` to acknowledge genuine large moves, `clearPrice` to take an asset offline. The vault's own `maxStaleness` (15 minutes) applies on top. The feed is `agent/operator/src/post-prices.ts` (CoinGecko, platform `robinhood`, every 5 minutes).
+
+Setup after deployment:
+
+```bash
+# 1. Register assets, deploy the oracle, seed first prices (ADMIN key)
+ACL=0x… VAULT=0x… PRICE_CASHCAT_1E18=160111000000000000 PRICE_PONS_1E18=457410000000000000 PRICE_AI_1E18=144829000000000000 \
+forge script script/RegisterRewards.s.sol:RegisterRewards --rpc-url $RPC --account rh-admin --broadcast
+# 2. Grant OPERATOR_ROLE to the relay key if it differs from the round operator
+# 3. Fund inventory from the TREASURER wallet (base units, 18 decimals)
+VAULT=0x… AMOUNT_CASHCAT=250000000000000000000 AMOUNT_PONS=60000000000000000000 AMOUNT_AI=150000000000000000000 \
+forge script script/FundRewards.s.sol:FundRewards --rpc-url $RPC --account rh-treasurer --broadcast
+# 4. Run the relay
+cd ../agent/operator && ORACLE_ADDRESS=0x… OPERATOR_PRIVATE_KEY=… bun run prices
+```
+
+Planned initial inventory (about $100 at 2026-10-03 prices): 250 CASHCAT, 60 PONS, 150 AI. Set `AMOUNT_*` to what the treasurer wallet actually holds; the vault only ever offers what it holds.

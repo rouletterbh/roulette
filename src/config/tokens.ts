@@ -23,6 +23,11 @@ export const RewardTokenSchema = z.object({
   issuerDocsUrl: z.string().url().nullable().optional(),
   /** Explorer-sourced canonical contract (highest holder count, listed on CoinGecko). Not used for settlement until the owner confirms and sets `contractAddress`. */
   candidateAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/).nullable().optional(),
+  /** Last reference price snapshot (USD) used when the live feed is unavailable; dated in `referencePriceAt`. */
+  referencePriceUsd: z.number().positive().nullable().optional(),
+  referencePriceAt: z.string().nullable().optional(),
+  /** Vault inventory in whole tokens (demo until the vault is funded onchain). */
+  inventoryUnits: z.number().nonnegative().optional(),
 });
 export type RewardToken = z.infer<typeof RewardTokenSchema>;
 export type RewardCategory = z.infer<typeof RewardCategory>;
@@ -72,9 +77,12 @@ export const rewardRegistry: RewardToken[] = z.array(RewardTokenSchema).parse([
   stock("GOOGL", "Alphabet"),
   stock("MSFT", "Microsoft"),
   { ...crypto("ETH", "Ether"), logoURI: "/brand/tokens/ETH.svg" },
-  { ...crypto("CASHCAT", "Cash Cat"), logoURI: "/brand/tokens/CASHCAT.png", contractAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", candidateAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4" },
-  { ...crypto("PONS", "Pons"), logoURI: "/brand/tokens/PONS.png", contractAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571", candidateAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571" },
-  { ...crypto("AI", "Artificial Inu"), logoURI: "/brand/tokens/AI.png", contractAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", candidateAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18" },
+  // Oracle: PostedPriceOracle (contracts/src/PostedPriceOracle.sol) fed by agent/operator/post-prices.ts
+  // from CoinGecko (platform "robinhood"). `priceOracle` holds the feed descriptor until the oracle
+  // contract is deployed, then its address. Reference snapshots taken 2026-10-03.
+  { ...crypto("CASHCAT", "Cash Cat"), logoURI: "/brand/tokens/CASHCAT.png", contractAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", candidateAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", priceOracle: "coingecko:robinhood:0x020bfC650A365f8BB26819deAAbF3E21291018b4", referencePriceUsd: 0.160111, referencePriceAt: "2026-10-03", enabled: true, liquidityStatus: "available", inventoryUnits: 250 },
+  { ...crypto("PONS", "Pons"), logoURI: "/brand/tokens/PONS.png", contractAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571", candidateAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571", priceOracle: "coingecko:robinhood:0x39dBED3a2bd333467115dE45665cC57F813C4571", referencePriceUsd: 0.45741, referencePriceAt: "2026-10-03", enabled: true, liquidityStatus: "available", inventoryUnits: 60 },
+  { ...crypto("AI", "Artificial Inu"), logoURI: "/brand/tokens/AI.png", contractAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", candidateAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", priceOracle: "coingecko:robinhood:0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", referencePriceUsd: 0.144829, referencePriceAt: "2026-10-03", enabled: true, liquidityStatus: "available", inventoryUnits: 150 },
 ]);
 
 export const chipTokenIds = {

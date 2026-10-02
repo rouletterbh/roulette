@@ -5,11 +5,16 @@ import { Button } from "@/components/ui/button";
 import { DemoBadge } from "@/components/ui/badge";
 import { RewardCard } from "@/components/rewards/reward-card";
 import { getRewardInventory } from "@/lib/demo/rewards";
+import { getTokenPrices } from "@/lib/prices/coingecko";
+import { rewardRegistry } from "@/config/tokens";
 
 export const metadata: Metadata = { title: "Rewards" };
 
-export default function RewardsPage() {
-  const inv = getRewardInventory();
+export const revalidate = 60;
+
+export default async function RewardsPage() {
+  const quotes = await getTokenPrices(rewardRegistry.filter((t) => t.contractAddress).map((t) => t.contractAddress!));
+  const inv = getRewardInventory(Object.fromEntries(Object.entries(quotes).map(([k, q]) => [k, q?.usd ?? null])));
   const groups = [
     { title: "Ecosystem tokens", sub: "Assets on Robinhood Chain held by the reward vault.", items: inv.filter((i) => i.token.category === "crypto") },
     { title: "Stock Tokens", sub: "Offered only where the vault holds inventory and your jurisdiction is enabled.", items: inv.filter((i) => i.token.category === "stock-token") },

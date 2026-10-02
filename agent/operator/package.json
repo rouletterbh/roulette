@@ -1,0 +1,13 @@
+{
+  "name": "roblette-operator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prices": "bun run src/post-prices.ts",
+    "prices:once": "bun run src/post-prices.ts --once",
+    "prices:dry": "bun run src/post-prices.ts --once --dry-run"
+  },
+  "dependencies": {
+    "viem": "^2.57.2"
+  }
+}

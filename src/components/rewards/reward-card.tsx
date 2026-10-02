@@ -22,7 +22,7 @@ export function RewardCard({ item, className }: { item: RewardInventory; classNa
         <dt className="text-muted">Category</dt><dd className="text-right">{token.category === "stock-token" ? "Stock Token" : token.category === "crypto" ? "Ecosystem" : "Special"}</dd>
         <dt className="text-muted">Network</dt><dd className="text-right">Robinhood Chain</dd>
         <dt className="text-muted">Inventory</dt><dd className="text-right tnum">{item.inventoryUsd > 0 ? formatUsd(item.inventoryUsd) : "—"}</dd>
-        <dt className="text-muted">Price</dt><dd className="text-right tnum">{item.priceUsd ? formatUsd(item.priceUsd) : <span className="text-faint">oracle not set</span>}</dd>
+        <dt className="text-muted">Price</dt><dd className="text-right tnum">{item.priceUsd ? formatUsd(item.priceUsd, { maximumFractionDigits: 4 }) : <span className="text-faint">oracle not set</span>}</dd>
         <dt className="text-muted">Min. claim</dt><dd className="text-right tnum">{formatUsd(token.minimumPayout)}</dd>
         <dt className="text-muted">Contract</dt><dd className="text-right font-mono text-[11px]">{token.contractAddress ?? <span className="text-faint">not set</span>}</dd>
       </dl>

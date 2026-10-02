@@ -13,9 +13,6 @@ export interface RewardInventory {
 
 const demoInventoryUsd: Record<string, number> = {
   "crypto-eth": 41.2,
-  "crypto-cashcat": 14.6,
-  "crypto-pons": 9.1,
-  "crypto-ai": 0,
   "stock-nvda": 0,
   "stock-aapl": 0,
   "stock-tsla": 0,
@@ -38,12 +35,18 @@ export const statusLabel: Record<LiquidityStatus, string> = {
   unverified: "Not yet listed",
 };
 
-export function getRewardInventory(): RewardInventory[] {
+/**
+ * Inventory valuation. Assets with `inventoryUnits` are valued at the live price
+ * (pass `prices` from the server feed) or the dated reference snapshot; others use
+ * the legacy USD figures. Until the vault is funded onchain these are planned holdings.
+ */
+export function getRewardInventory(prices?: Record<string, number | null | undefined>): RewardInventory[] {
   return rewardRegistry.map((token) => {
-    const inventoryUsd = demoInventoryUsd[token.id] ?? 0;
-    // Demo: ecosystem assets with inventory are shown as available for the claim flow; contract addresses remain unset.
+    const live = token.contractAddress ? prices?.[token.contractAddress.toLowerCase()] : null;
+    const priceUsd = live ?? token.referencePriceUsd ?? null;
+    const inventoryUsd = token.inventoryUnits != null && priceUsd ? Math.round(token.inventoryUnits * priceUsd * 100) / 100 : demoInventoryUsd[token.id] ?? 0;
     const status: LiquidityStatus = inventoryUsd > 0 ? (inventoryUsd < token.minimumPayout * 10 ? "low" : "available") : token.category === "stock-token" ? "unverified" : "unavailable";
-    return { token, inventoryUsd, priceUsd: null, status, statusLabel: statusLabel[status] };
+    return { token, inventoryUsd, priceUsd, status, statusLabel: statusLabel[status] };
   });
 }
 

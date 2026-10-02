@@ -123,6 +123,33 @@ export const openapiDocument = {
     "/rewards": {
       get: { tags: ["read"], operationId: "listRewards", summary: "Reward inventory and statuses", responses: { "200": envelope(ref("Rewards"), "OK") } },
     },
+    "/prices": {
+      get: {
+        tags: ["read"],
+        operationId: "listPrices",
+        summary: "Reference USD prices for reward assets with a contract (mirrors what the operator posts to the onchain oracle)",
+        responses: {
+          "200": envelope(
+            {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  symbol: { type: "string" },
+                  contractAddress: { type: "string" },
+                  priceUsd: { type: ["number", "null"] },
+                  updatedAt: { type: ["integer", "null"], description: "unix seconds" },
+                  source: { type: ["string", "null"], enum: ["coingecko", "reference-snapshot", null] },
+                  oracle: { type: ["string", "null"], description: "feed descriptor until the PostedPriceOracle is deployed, then its address" },
+                },
+              },
+            },
+            "OK",
+          ),
+        },
+      },
+    },
     "/rounds": {
       get: {
         tags: ["read", "fairness"],
