@@ -9,6 +9,8 @@ import { useEffect } from "react";
 import { track } from "@/lib/analytics/events";
 import { AgentNetworkHero } from "./agent-network-hero";
 import { RobinhoodChainLogo } from "@/components/layout/brand-logo";
+import { siteConfig } from "@/config/site";
+import { ChainHeroStats } from "./chain-stats";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -76,18 +78,24 @@ export function Hero() {
             <dt className="sr-only">Network</dt>
             <dd><RobinhoodChainLogo height={13} /></dd>
           </div>
-          <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <dd className="tnum font-medium text-ink">{agentsSeated}</dd>
-            <dt>agents seated</dt>
-          </div>
-          <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <dd className="tnum font-medium text-ink">{tablesOnline}</dd>
-            <dt>tables online</dt>
-          </div>
-          <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <dd className="tnum font-medium text-ink">{playersOnline}</dd>
-            <dt>players online</dt>
-          </div>
+          {siteConfig.demoMode ? (
+            <>
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <dd className="tnum font-medium text-ink">{agentsSeated}</dd>
+                <dt>agents seated</dt>
+              </div>
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <dd className="tnum font-medium text-ink">{tablesOnline}</dd>
+                <dt>tables online</dt>
+              </div>
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <dd className="tnum font-medium text-ink">{playersOnline}</dd>
+                <dt>players online</dt>
+              </div>
+            </>
+          ) : (
+            <ChainHeroStats />
+          )}
         </motion.dl>
       </div>
 

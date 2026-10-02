@@ -12,23 +12,45 @@ import { getRewardInventory, totalRewardInventoryUsd } from "@/lib/demo/rewards"
 import { economicsDefaults } from "@/config/economics";
 import { mulberry32 } from "@/lib/demo/prng";
 import { cn, formatUsd } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { activeChain } from "@/config/chains";
+import { SectionHead } from "@/components/treasury/section-head";
+import { ChainTreasury } from "@/components/treasury/chain-treasury";
 
 export const metadata: Metadata = { title: "Treasury" };
 
-function SectionHead({ n, title, note, children }: { n: string; title: string; note?: string; children?: React.ReactNode }) {
+export default function TreasuryPage() {
+  return siteConfig.demoMode ? <DemoTreasuryPage /> : <ChainTreasuryPage />;
+}
+
+/**
+ * Demo-off: the page shell stays server-rendered; every figure is read from the
+ * contracts on Robinhood Chain by <ChainTreasury /> (client). No simulated rows,
+ * no "Testnet" label on mainnet, no demo network wording.
+ */
+function ChainTreasuryPage() {
   return (
-    <div className="border-t border-border pt-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-        <h2 className="font-display text-2xl md:text-3xl">{title}</h2>
-        <span className="microlabel">{n}</span>
-      </div>
-      {note && <p className="mt-2 max-w-2xl text-[13px] text-muted">{note}</p>}
-      {children}
+    <div className="container-edge py-16 md:py-24">
+      <header className="blueprint">
+        <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl">
+            <Eyebrow className="mb-4 block" live>Treasury</Eyebrow>
+            <h1 className="font-display text-display-lg text-balance">The house cannot bet what it cannot pay.</h1>
+            <p className="mt-5 max-w-lg text-base text-muted md:text-lg">Every limit on every table is derived from these numbers, read live from the treasury contract. When they grow, limits grow. Nobody tops up the bankroll by hand.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge tone="outline">{activeChain.name}</Badge>
+            <Badge tone="outline" className="tnum">chain {activeChain.id}</Badge>
+          </div>
+        </div>
+      </header>
+      <ChainTreasury />
     </div>
   );
 }
 
-export default function TreasuryPage() {
+/** Demo mode: simulated treasury (unchanged). */
+function DemoTreasuryPage() {
   const t = demoTreasury;
   const { available, safety } = availableBankroll(t);
   const safe = getMaximumSafeBet(t, 35);

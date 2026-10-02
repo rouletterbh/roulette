@@ -10,6 +10,9 @@ import { useMounted } from "@/lib/hooks/use-mounted";
 import { colorOf } from "@/lib/roulette/constants";
 import type { AgentState } from "@/lib/agent/states";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { useHomeChain } from "./chain-stats";
+import { useOwnSeats } from "@/components/agent/use-own-seats";
 
 /**
  * AgentNetwork hero: the table is alive. Four agent nodes around a real wheel,
@@ -58,6 +61,8 @@ export function AgentNetworkHero() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const node = NODES[featured];
   const step = SCRIPT[stepIdx].step;
+  // Demo off: the animation stays an example; the instrument corners read the chain and the viewer's own seats.
+  const live = !siteConfig.demoMode;
 
   useEffect(() => {
     if (!mounted) return;
@@ -107,16 +112,22 @@ export function AgentNetworkHero() {
   return (
     <div className="relative mx-auto w-full max-w-[1180px]">
       {/* instrumentation corners */}
-      <div className="pointer-events-none absolute left-0 top-0 z-20 hidden flex-col gap-1 md:flex">
-        <Instrument k="Round" v={`#${roundId}`} />
-        <Instrument k="Agents" v={`${mounted ? summary.active : 8} active`} />
-        <Instrument k="Commitment" v={phase === "open" ? "published" : "locked"} />
-      </div>
-      <div className="pointer-events-none absolute right-0 top-0 z-20 hidden flex-col items-end gap-1 md:flex">
-        <Instrument k="Treasury" v="safe" ok />
-        <Instrument k="Exposure" v={`${(table?.exposurePct ?? 12.4).toFixed(1)}%`} />
-        <Instrument k="Next round" v={step === "collected" ? "00:03" : phase === "open" ? "00:11" : "—"} />
-      </div>
+      {live ? (
+        <ChainInstruments mounted={mounted} />
+      ) : (
+        <>
+          <div className="pointer-events-none absolute left-0 top-0 z-20 hidden flex-col gap-1 md:flex">
+            <Instrument k="Round" v={`#${roundId}`} />
+            <Instrument k="Agents" v={`${mounted ? summary.active : 8} active`} />
+            <Instrument k="Commitment" v={phase === "open" ? "published" : "locked"} />
+          </div>
+          <div className="pointer-events-none absolute right-0 top-0 z-20 hidden flex-col items-end gap-1 md:flex">
+            <Instrument k="Treasury" v="safe" ok />
+            <Instrument k="Exposure" v={`${(table?.exposurePct ?? 12.4).toFixed(1)}%`} />
+            <Instrument k="Next round" v={step === "collected" ? "00:03" : phase === "open" ? "00:11" : "—"} />
+          </div>
+        </>
+      )}
 
       <div className="relative mx-auto aspect-square w-[min(78vw,420px)] md:w-[520px]">
         {/* traces */}
@@ -170,8 +181,28 @@ export function AgentNetworkHero() {
           </ol>
         </div>
       </div>
-      <p className="mt-4 text-center microlabel md:absolute md:bottom-0 md:right-0 md:mt-0 md:text-right">results are committed before the wheel moves</p>
+      <p className="mt-4 text-center microlabel md:absolute md:bottom-0 md:right-0 md:mt-0 md:text-right">{live ? "example round · results are committed before the wheel moves" : "results are committed before the wheel moves"}</p>
     </div>
+  );
+}
+
+/** Demo off only: chain + own-seat instrument corners. Mounted only when WagmiProvider exists (demo mode has none). */
+function ChainInstruments({ mounted }: { mounted: boolean }) {
+  const chain = useHomeChain();
+  const own = useOwnSeats();
+  return (
+    <>
+      <div className="pointer-events-none absolute left-0 top-0 z-20 hidden flex-col gap-1 md:flex">
+        <Instrument k="Round" v={chain.roundsReady && chain.live ? `#${chain.live.roundId.toString()}` : "—"} />
+        <Instrument k="Your agents" v={`${mounted ? own.summary.seated : "—"} seated`} />
+        <Instrument k="Tables" v={chain.tablesReady ? `${chain.tablesOnline} onchain` : "—"} />
+      </div>
+      <div className="pointer-events-none absolute right-0 top-0 z-20 hidden flex-col items-end gap-1 md:flex">
+        <Instrument k="Treasury" v={chain.treasuryReady ? (chain.view.isSolvent ? "solvent" : "INSOLVENT") : "—"} ok={chain.treasuryReady && chain.view.isSolvent} />
+        <Instrument k="Exposure" v={chain.treasuryReady && chain.view.exposurePct != null ? `${chain.view.exposurePct.toFixed(1)}%` : "—"} />
+        <Instrument k="Max straight" v={chain.treasuryReady ? `${chain.view.maxStraightUnits} units` : "—"} />
+      </div>
+    </>
   );
 }
 

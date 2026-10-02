@@ -2,6 +2,8 @@ import { Section, SectionHeader } from "@/components/ui/section";
 import { Button } from "@/components/ui/button";
 import { TableCard } from "@/components/roulette/table-card";
 import { demoTables } from "@/lib/demo/data";
+import { siteConfig } from "@/config/site";
+import { ChainTables } from "@/components/tables/chain-tables";
 
 export function LiveTables() {
   return (
@@ -12,11 +14,15 @@ export function LiveTables() {
         description="The wheel never closes. Public tables run around the clock, share one verified result per round, and take their limits from the treasury, never from a promise."
         action={<Button href="/tables" variant="outline">All tables</Button>}
       />
-      <div className="no-scrollbar -mx-[clamp(1rem,4vw,3.5rem)] flex snap-x snap-mandatory gap-4 overflow-x-auto px-[clamp(1rem,4vw,3.5rem)] pb-4 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 xl:grid-cols-4">
-        {demoTables.map((t) => (
-          <TableCard key={t.id} table={t} className="w-[82vw] shrink-0 snap-start sm:w-[360px] md:w-auto" />
-        ))}
-      </div>
+      {siteConfig.demoMode ? (
+        <div className="no-scrollbar -mx-[clamp(1rem,4vw,3.5rem)] flex snap-x snap-mandatory gap-4 overflow-x-auto px-[clamp(1rem,4vw,3.5rem)] pb-4 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 xl:grid-cols-4">
+          {demoTables.map((t) => (
+            <TableCard key={t.id} table={t} className="w-[82vw] shrink-0 snap-start sm:w-[360px] md:w-auto" />
+          ))}
+        </div>
+      ) : (
+        <ChainTables gridClassName="grid gap-4 md:grid-cols-2 xl:grid-cols-4" note={false} />
+      )}
     </Section>
   );
 }

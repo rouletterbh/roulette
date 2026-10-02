@@ -4,8 +4,14 @@ import { Button } from "@/components/ui/button";
 import { AgentGlyph } from "@/components/agent/agent-glyph";
 import { getLeague } from "@/lib/demo/agents";
 import { agentCode } from "@/lib/agent/states";
+import { siteConfig } from "@/config/site";
+import { OwnLeagueTeaser } from "./own-agents";
 
 export function LeagueTeaser() {
+  return siteConfig.demoMode ? <DemoLeagueTeaser /> : <OwnLeagueTeaser />;
+}
+
+function DemoLeagueTeaser() {
   const rows = getLeague("discipline").slice(0, 5);
   return (
     <section className="container-edge py-20 md:py-28">

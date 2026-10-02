@@ -5,13 +5,17 @@ import { useDock } from "@/store/dock";
 import { AgentActivityFeed } from "@/components/agent/agent-activity-feed";
 import { useAgentNetwork } from "@/store/agent-network";
 import { useMounted } from "@/lib/hooks/use-mounted";
+import { siteConfig } from "@/config/site";
+import { useOwnSeats } from "@/components/agent/use-own-seats";
 
 /** Global ACTIVITY drawer from the nav: network telemetry anywhere in the product. */
 export function ActivityDrawer() {
   const open = useDock((s) => s.activityOpen);
   const setOpen = useDock((s) => s.setActivityOpen);
   const mounted = useMounted();
-  const summary = useAgentNetwork((s) => s.summary());
+  const network = useAgentNetwork((s) => s.summary());
+  const own = useOwnSeats();
+  const summary = siteConfig.demoMode ? network : own.summary;
   const reduce = useReducedMotion();
   return (
     <AnimatePresence>

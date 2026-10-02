@@ -5,8 +5,8 @@ import { cn, formatUsd } from "@/lib/utils";
  * mono derivation hint, corner index. Meant to sit in a `gap-px bg-hairline`
  * grid so the hairlines come from the grid, not the cell.
  */
-export function TreasuryMetric({ label, value, hint, accent, className, format = "usd", index }: { label: string; value: number; hint?: string; accent?: boolean; className?: string; format?: "usd" | "int" | "pct"; index?: string }) {
-  const text = format === "usd" ? formatUsd(value) : format === "pct" ? `${value.toFixed(1)}%` : String(value);
+export function TreasuryMetric({ label, value, hint, accent, className, format = "usd", index }: { label: string; value: number | string; hint?: string; accent?: boolean; className?: string; format?: "usd" | "int" | "pct"; index?: string }) {
+  const text = typeof value === "string" ? value : format === "usd" ? formatUsd(value) : format === "pct" ? `${value.toFixed(1)}%` : String(value);
   return (
     <div className={cn("relative flex min-w-0 flex-col bg-canvas p-5 md:p-6", className)}>
       <div className="flex items-start justify-between gap-3">

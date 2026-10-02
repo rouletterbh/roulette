@@ -8,6 +8,7 @@ import { useStable } from "@/store/stable";
 import { useCollection, type Acquisition } from "@/store/collection";
 import { useAgentNetwork } from "@/store/agent-network";
 import { getDemoAgent, getDemoAgents } from "@/lib/demo/agents";
+import { siteConfig } from "@/config/site";
 import { useMounted } from "@/lib/hooks/use-mounted";
 import { useWallet } from "@/store/wallet";
 import { agentCode, STRATEGY_CLASSES, type AgentState, type StrategyClass } from "@/lib/agent/states";
@@ -103,7 +104,7 @@ export function AgentProfile({ id }: { id: string }) {
         acquisitions: mine, demoCollection: [], traces: [...seat.traces].reverse(), marks, demo: false,
       };
     }
-    const d = getDemoAgent(id);
+    const d = siteConfig.demoMode ? getDemoAgent(id) : null;
     if (!d) return null;
     const idx = getDemoAgents().findIndex((x) => x.id === d.id);
     const state = net?.state ?? demoFallbackState(d.status);

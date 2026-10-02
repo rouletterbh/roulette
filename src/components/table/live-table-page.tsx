@@ -6,6 +6,8 @@ import { useCreatedTables } from "@/store/created-tables";
 import { GameTable, type GameTableConfig } from "@/components/roulette/game-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { siteConfig } from "@/config/site";
+import { tableName } from "@/lib/web3/treasury-view";
 
 export function LiveTablePage({ id }: { id: string }) {
   const created = useCreatedTables((s) => s.tables);
@@ -13,8 +15,12 @@ export function LiveTablePage({ id }: { id: string }) {
 
   const demo = demoTables.find((t) => t.id === id);
   const own = created.find((t) => t.id === id || t.inviteCode === id);
+  // Demo off: /table/<n> is chain table n (ChainGameDriver resolves it via resolveChainTableId).
+  const chain = !siteConfig.demoMode && /^\d+$/.test(id) && Number(id) > 0;
 
   if (!hydrated) return <div className="container-edge py-24" aria-busy="true" />;
+
+  if (chain) return <GameTable key={id} config={{ mode: "live", tableId: id, name: tableName(Number(id)), minBet: 1 }} />;
 
   if (demo?.status === "locked") {
     return (

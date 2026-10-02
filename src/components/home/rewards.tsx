@@ -6,6 +6,7 @@ import { rewardRegistry, type RewardToken } from "@/config/tokens";
 import { siteConfig } from "@/config/site";
 import { cn } from "@/lib/utils";
 import { TokenLogo } from "@/components/layout/brand-logo";
+import { ChainRewardsTicker } from "./chain-rewards-ticker";
 
 const statusLabel: Record<RewardToken["liquidityStatus"], string> = {
   available: "Available",
@@ -38,6 +39,9 @@ export function RewardsSection() {
         </div>
       </div>
 
+      {!siteConfig.demoMode ? (
+        <ChainRewardsTicker />
+      ) : (
       <div className="relative mt-14 overflow-hidden border-y border-hairline py-5" aria-label="Reward assets ticker">
         <div className="ticker-track flex w-max gap-3 px-3">
           {list.map((t, i) => (
@@ -55,6 +59,7 @@ export function RewardsSection() {
           ))}
         </div>
       </div>
+      )}
       <p className="container-edge mt-4 text-[11.5px] text-muted">
         Stock Token availability is jurisdiction-dependent and not available in all regions. Symbols shown are candidates in a registry, not promises of inventory. <Link href="/stock-token-disclosure" className="underline underline-offset-2">Read the disclosure</Link>.
       </p>

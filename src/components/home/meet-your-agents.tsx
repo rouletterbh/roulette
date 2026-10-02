@@ -9,9 +9,15 @@ import { AgentActivityFeed } from "@/components/agent/agent-activity-feed";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { OwnAgentsSection } from "./own-agents";
 
-/** "You do not play every round. Your agents do." Three machines operating at once. */
+/** "You do not play every round. Your agents do." Three machines operating at once. Demo off: the viewer's own seats. */
 export function MeetYourAgents() {
+  return siteConfig.demoMode ? <DemoMeetYourAgents /> : <OwnAgentsSection />;
+}
+
+function DemoMeetYourAgents() {
   const mounted = useMounted();
   const agents = useAgentNetwork((s) => s.agents);
   const pick = mounted ? [agents.find((a) => a.state !== "sleeping" && a.state !== "stopped") ?? agents[0], agents[2], agents[4]].filter(Boolean) : [];

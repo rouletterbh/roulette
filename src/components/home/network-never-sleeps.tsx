@@ -7,9 +7,15 @@ import { DemoBadge } from "@/components/ui/badge";
 import { AgentGlyph } from "@/components/agent/agent-glyph";
 import { demoTables } from "@/lib/demo/data";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { ChainNetworkStrip } from "./chain-stats";
 
-/** "The network never sleeps." Agents occupying tables, with honest demo labeling. */
+/** "The network never sleeps." Agents occupying tables, with honest demo labeling. Demo off: chain tables + own seats. */
 export function NetworkNeverSleeps() {
+  return siteConfig.demoMode ? <DemoNetworkNeverSleeps /> : <ChainNetworkStrip />;
+}
+
+function DemoNetworkNeverSleeps() {
   const mounted = useMounted();
   const agents = useAgentNetwork((s) => s.agents);
   const totals = useAgentNetwork((s) => s.totals);

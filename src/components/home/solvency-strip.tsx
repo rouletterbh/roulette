@@ -3,12 +3,18 @@ import { demoTreasury } from "@/lib/demo/data";
 import { getMaximumSafeBet } from "@/lib/risk/engine";
 import { formatUsd } from "@/lib/utils";
 import { DemoBadge } from "@/components/ui/badge";
+import { siteConfig } from "@/config/site";
+import { ChainSolvencyStrip } from "./chain-stats";
 
 /**
  * Live table limits derived from the risk engine. As treasury grows, limits expand
- * automatically — no human tops up the bankroll.
+ * automatically — no human tops up the bankroll. Demo off: read from CasinoTreasury.
  */
 export function SolvencyStrip() {
+  return siteConfig.demoMode ? <DemoSolvencyStrip /> : <ChainSolvencyStrip />;
+}
+
+function DemoSolvencyStrip() {
   const t = demoTreasury;
   const safe = getMaximumSafeBet(t, 35);
   const items = [

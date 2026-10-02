@@ -6,6 +6,8 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useAgentNetwork, type TelemetryEvent } from "@/store/agent-network";
 import { useMounted } from "@/lib/hooks/use-mounted";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { useOwnSeats } from "./use-own-seats";
 
 const fmt = (t: number) => {
   const d = new Date(t);
@@ -18,7 +20,10 @@ const fmt = (t: number) => {
  */
 export function AgentActivityFeed({ tableId, agentId, limit = 14, className, newestFirst, compact, extra = [], title = "Activity" }: { tableId?: string; agentId?: string; limit?: number; className?: string; newestFirst?: boolean; compact?: boolean; extra?: TelemetryEvent[]; title?: string | null }) {
   const mounted = useMounted();
-  const events = useAgentNetwork((s) => s.events);
+  const networkEvents = useAgentNetwork((s) => s.events);
+  const own = useOwnSeats();
+  // Demo off: only the viewer's own seats produce telemetry; nothing network-wide is shown.
+  const events = siteConfig.demoMode ? networkEvents : own.events;
   const reduce = useReducedMotion();
   const ref = useRef<HTMLOListElement>(null);
   let list = [...events, ...extra].sort((a, b) => a.at - b.at);
@@ -36,7 +41,7 @@ export function AgentActivityFeed({ tableId, agentId, limit = 14, className, new
       {title && <div className="mb-2 flex items-center justify-between"><span className="microlabel">{title}</span><span className="microlabel">telemetry</span></div>}
       <ol ref={ref} className={cn("min-h-0 flex-1 overflow-y-auto", compact ? "space-y-1" : "space-y-1.5")} aria-live="polite" aria-label="Agent activity">
         {!mounted || list.length === 0 ? (
-          <li className="text-[12px] text-muted">Waiting for the network…</li>
+          <li className="text-[12px] text-muted">{siteConfig.demoMode ? "Waiting for the network…" : "No agents seated yet."}</li>
         ) : (
           <AnimatePresence initial={false}>
             {list.map((e) => (

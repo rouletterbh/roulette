@@ -4,9 +4,15 @@ import Link from "next/link";
 import { useAgentNetwork } from "@/store/agent-network";
 import { useMounted } from "@/lib/hooks/use-mounted";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { ChainCommandStrip } from "./chain-stats";
 
-/** Thin operating strip: live network counts, round, treasury health. */
+/** Thin operating strip: live network counts, round, treasury health. Demo off: own seats + chain. */
 export function AgentCommandStrip({ className }: { className?: string }) {
+  return siteConfig.demoMode ? <DemoCommandStrip className={className} /> : <ChainCommandStrip className={className} />;
+}
+
+function DemoCommandStrip({ className }: { className?: string }) {
   const mounted = useMounted();
   const summary = useAgentNetwork((s) => s.summary());
   const table = useAgentNetwork((s) => s.tables["neon-01"]);
