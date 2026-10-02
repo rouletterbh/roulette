@@ -30,6 +30,10 @@ import { Button } from "@/components/ui/button";
 import { formatNumber, cn, shortAddress } from "@/lib/utils";
 import { RealMoneyGate } from "@/components/compliance/real-money-gate";
 import { AgentSeatPanel } from "@/components/agent/agent-seat-panel";
+import { AgentRail } from "@/components/table/agent-rail";
+import { RoundTelemetry } from "@/components/agent/round-telemetry";
+import { useAgentNetwork } from "@/store/agent-network";
+import { useState, useCallback } from "react";
 
 export interface GameTableConfig {
   mode: GameMode;
@@ -66,6 +70,9 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
   const reduced = !!prefersReduced || reducedPref;
   const isMobile = useMediaQuery("(max-width: 1023px)");
   const initialized = useRef(false);
+  const netTable = useAgentNetwork((s) => (config.tableId ? s.tables[config.tableId] : undefined));
+  const [railHighlight, setRailHighlight] = useState<string | null>(null);
+  const onHighlight = useCallback((id: string | null) => setRailHighlight(id), []);
 
   const practice = config.mode === "practice";
   const shared = config.mode === "live" || config.mode === "private";
@@ -153,6 +160,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
             <p className="mt-1.5 text-[12.5px] text-muted">
               European roulette · {practice ? "practice chips only · nothing touches the chain" : `${speed} rounds · min ${config.minBet ?? 1} · max ${formatNumber(maxOutside)} outside · ${formatNumber(maxStraight)} straight`}
             </p>
+            {shared && netTable && <RoundTelemetry className="mt-2" roundId={g.roundId} phase={bettingOpen ? "open" : g.phase === "result" ? "settling" : "locked"} nextAt={live.bettingEndsAt} exposurePct={netTable.exposurePct} />}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -174,6 +182,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
         <aside className="order-3 flex flex-col gap-5 lg:order-1 lg:max-h-[calc(100vh-180px)] lg:overflow-y-auto lg:pr-1">
           {shared ? (
             <>
+              <AgentRail tableId={config.tableId ?? config.mode} selfAddress={selfAddress} selfName={selfName} onHighlight={onHighlight} />
               <TablePlayers seats={live.seats} spectators={live.spectators} selfName={selfName} selfAddress={selfAddress} selfBets={total} onMute={live.mute} onBlock={live.block} onReport={live.report} muted={live.muted} />
               <TableFeed items={live.feed} muted={live.muted} onChat={live.chat} onReact={live.react} selfAddress={selfAddress} className="min-h-[260px] border-t border-hairline pt-4" />
             </>
@@ -230,7 +239,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
           )}
 
           <div className="mt-2 lg:mt-6">
-            <RouletteBoard bets={g.bets} onBet={g.addBet} onRemove={g.removeBet} disabled={!bettingOpen} vertical={isMobile} winning={g.phase === "result" ? g.lastRound?.result ?? null : null} practice={practice} />
+            <RouletteBoard bets={g.bets} onBet={g.addBet} onRemove={g.removeBet} disabled={!bettingOpen} vertical={isMobile} winning={g.phase === "result" ? g.lastRound?.result ?? null : null} practice={practice} externalHighlight={railHighlight} />
             <ChipSelector className="mt-5" value={g.selectedChip} onChange={g.selectChip} onClear={g.clear} onUndo={g.undo} onRepeat={g.repeat} onDouble={g.double} onMaxSafe={() => g.maxSafe()} disabled={!bettingOpen} canUndo={g.history.length > 0} canRepeat={!!g.lastBets} hasBets={placed.length > 0} practice={practice} />
           </div>
         </div>

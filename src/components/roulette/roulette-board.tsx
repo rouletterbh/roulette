@@ -16,6 +16,8 @@ export interface RouletteBoardProps {
   winning?: number | null;
   className?: string;
   practice?: boolean;
+  /** Bet id to highlight from outside (e.g. hovering an agent's bet in the rail). */
+  externalHighlight?: string | null;
 }
 
 const NUMBERS = Array.from({ length: 36 }, (_, i) => i + 1);
@@ -25,8 +27,9 @@ function chipValueColor(stake: number) {
   return denoms.find((d) => d <= stake) ?? 1;
 }
 
-export function RouletteBoard({ bets, onBet, onRemove, disabled, vertical = false, winning = null, className, practice }: RouletteBoardProps) {
-  const [hover, setHover] = useState<string | null>(null);
+export function RouletteBoard({ bets, onBet, onRemove, disabled, vertical = false, winning = null, className, practice, externalHighlight = null }: RouletteBoardProps) {
+  const [innerHover, setHover] = useState<string | null>(null);
+  const hover = innerHover ?? externalHighlight;
   const hoverSet = useMemo(() => new Set(hover ? betFromId(hover)?.numbers ?? [] : []), [hover]);
 
   const cellPos = (n: number): CSSProperties => {

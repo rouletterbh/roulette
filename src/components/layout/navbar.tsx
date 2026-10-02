@@ -11,11 +11,21 @@ import { ThemeToggle } from "./theme-toggle";
 import { NetworkStatus } from "./network-status";
 import { WalletButton } from "./wallet-button";
 import { Button } from "@/components/ui/button";
+import { useDock } from "@/store/dock";
+import { useMyAgent } from "@/components/agent/use-my-agent";
+import { AgentGlyph } from "@/components/agent/agent-glyph";
+import { AgentStatus } from "@/components/agent/agent-status";
+import { useMounted } from "@/lib/hooks/use-mounted";
 
 export function Navbar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const mounted = useMounted();
+  const { seat, state } = useMyAgent();
+  const activityOpen = useDock((s) => s.activityOpen);
+  const setActivityOpen = useDock((s) => s.setActivityOpen);
+  const setDockOpen = useDock((s) => s.setOpen);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -47,7 +57,7 @@ export function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "relative rounded-full px-3.5 py-2 text-[13.5px] font-medium transition-colors",
+                  "relative px-3.5 py-2 font-mono text-[11.5px] uppercase tracking-[0.12em] transition-colors",
                   active ? "text-ink" : "text-muted hover:text-ink",
                 )}
               >
@@ -63,6 +73,14 @@ export function Navbar() {
         <div className="flex items-center gap-2.5 md:gap-3">
           <div className="hidden items-center gap-3 sm:flex">
             <NetworkStatus />
+            <button type="button" onClick={() => setActivityOpen(!activityOpen)} aria-pressed={activityOpen} className={cn("font-mono text-[11.5px] uppercase tracking-[0.12em] transition-colors", activityOpen ? "text-ink" : "text-muted hover:text-ink")}>Activity</button>
+            {mounted && seat && (
+              <button type="button" onClick={() => setDockOpen(true)} className="flex items-center gap-2 border border-border px-2 py-1 transition-colors hover:border-ink" aria-label={`${seat.code} agent`}>
+                <AgentGlyph seed={seat.id} state={state} size={18} className="text-ink" />
+                <span className="font-mono text-[11px] uppercase tracking-[0.06em]">{seat.code}</span>
+                <AgentStatus state={state} />
+              </button>
+            )}
             <ThemeToggle />
             <WalletButton />
           </div>

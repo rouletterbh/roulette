@@ -5,6 +5,7 @@ import { useGame } from "@/store/game";
 import { useAgentSeats, decide, evaluateCondition, type AgentSeat } from "@/store/agent-seat";
 import { getMaximumSafeBet } from "@/lib/risk/engine";
 import { colorOf } from "@/lib/roulette/constants";
+import { sfx } from "@/lib/sound/engine";
 import { useCollection } from "@/store/collection";
 
 /**
@@ -27,7 +28,7 @@ export function useAgentDriver(seat: AgentSeat | undefined, shared: boolean) {
     if (!s) return;
     const d = decide(s, roundId);
     if (!d.act) {
-      if (d.stop) seats.stop(seatId, d.stop);
+      if (d.stop) { seats.stop(seatId, d.stop); sfx.agentLeash(); }
       else if (d.skip && d.skip !== "already acted" && d.skip !== "not active") seats.recordSkip(seatId, roundId, d.skip);
       return;
     }
@@ -57,9 +58,10 @@ export function useAgentDriver(seat: AgentSeat | undefined, shared: boolean) {
         return;
       }
       store.recordBet(seatId, roundId, s.rules.bets);
+      sfx.agentMatch();
       store.recordTrace(seatId, { roundId, at: Date.now(), decision: `BET ${s.rules.bets.map((b) => b.betId.toUpperCase().replace("STRAIGHT:", "")).join(" + ")}`, rule: cond.rule, input: cond.input, condition: true, leash: "pass", leashNote: `${Math.max(0, s.rules.stopLoss + s.net)} to stop loss`, maxAllowed, wager, commitment: g.commitment?.commitment, tx: null });
       // Shared tables close on the timer; solo tables spin once the agent has bet.
-      if (shared) g.placeBets();
+      if (shared) { g.placeBets(); sfx.agentLock(); }
       else setTimeout(() => useGame.getState().phase === "betting" && useGame.getState().placeBets(), 1200);
     }, 1500);
     return () => clearTimeout(t);
@@ -74,6 +76,7 @@ export function useAgentDriver(seat: AgentSeat | undefined, shared: boolean) {
     settledRef.current = lastRound.roundId;
     const store = useAgentSeats.getState();
     store.recordResult(seatId, lastRound.roundId, lastRound.result, lastRound.settlement.netProfit);
+    sfx.agentSettle();
     const last = store.seats[seatId]?.traces.findLast((t) => t.roundId === lastRound.roundId);
     if (last) {
       const traces = store.seats[seatId].traces.map((t) => (t === last ? { ...t, result: `${colorOf(lastRound.result).toUpperCase()} ${lastRound.result}`, outcome: lastRound.settlement.netProfit } : t));

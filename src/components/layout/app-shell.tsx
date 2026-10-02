@@ -1,6 +1,8 @@
 import { Navbar } from "./navbar";
 import { Footer } from "./footer";
 import { DemoBanner } from "./demo-banner";
+import { AgentDock } from "@/components/agent/agent-dock";
+import { ActivityDrawer } from "./activity-drawer";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +16,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <Footer />
+      <ActivityDrawer />
+      <AgentDock />
     </>
   );
 }

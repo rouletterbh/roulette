@@ -13,9 +13,8 @@ export const siteConfig = {
     { label: "Play", href: "/play" },
     { label: "Tables", href: "/tables" },
     { label: "Agents", href: "/agents" },
-    { label: "Rewards", href: "/rewards" },
-    { label: "Leaderboard", href: "/leaderboard" },
-    { label: "Explore", href: "/explore" },
+    { label: "Collect", href: "/me/collection" },
+    { label: "Treasury", href: "/treasury" },
   ],
   footer: [
     {
@@ -31,6 +30,7 @@ export const siteConfig = {
       links: [
         { label: "Rewards", href: "/rewards" },
         { label: "Leaderboard", href: "/leaderboard" },
+        { label: "Explore", href: "/explore" },
         { label: "Treasury", href: "/treasury" },
       ],
     },

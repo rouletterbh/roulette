@@ -5,7 +5,7 @@ import { demoTables } from "@/lib/demo/data";
 
 export function LiveTables() {
   return (
-    <Section className="!pb-0">
+    <Section>
       <SectionHeader
         eyebrow="Live tables"
         title={<>Pull up a seat.</>}

@@ -64,8 +64,8 @@ export function AgentNetworkHero() {
     if (reduce) return;
     const cur = SCRIPT[stepIdx];
     if (cur.step === "spin") {
-      setSpinning(true);
-      return;
+      timer.current = setTimeout(() => setSpinning(true), 0);
+      return () => { if (timer.current) clearTimeout(timer.current); };
     }
     timer.current = setTimeout(() => {
       if (stepIdx === SCRIPT.length - 1) {

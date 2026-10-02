@@ -59,3 +59,14 @@ Long-form legal pages use `src/components/ui/prose.tsx` `<Prose>` + `<LegalPage>
 
 ## Accessibility
 Keyboard reachable, visible focus (global `:focus-visible` ring), never color-only (numbers carry R/B letters), `aria-label`s on icon buttons, respect reduced motion.
+
+## Agent system (redesign, Oct 2026)
+Creative direction: "AI dealing room" — autonomous agents operating a live onchain casino. Light stays primary. Hairlines, serif display type, edge-to-edge sections, corner metadata, `microlabel` (mono uppercase tiny), `font-mono tnum` numerals, `blueprint` / `blueprint-radial` faint backgrounds. Operator vocabulary from `src/lib/agent/states.ts` (Observing table, Thesis matched, Leash check, Executing, Round locked, Settling, Collected, Stop loss hit, Round cap reached, Sleeping, Paused). Tiny state indicators, never oversized badges.
+
+Semantic tokens: `--agent-observing/thinking/executing/settling/paused/stopped/warn` (mostly monochrome; acid green = executing/active; amber only near limits).
+
+Primitives in `src/components/agent/`: `AgentGlyph` (unique per seed, motion encodes state), `AgentStatus`, `AgentActivityFeed` (execution telemetry, not chat), `AgentLeash` (four arcs: chips · loss · rounds · time), `AgentDecisionTrace` (input → rule → condition → leash → action → outcome; never an inner monologue), `DecisionMap`, `AgentStrategy` (IF/THEN/SIZE), `AgentExecutionPath`, `AgentMiniCard`, `AgentRunSummary`, `AgentCollectionEvent`, `RoundTelemetry`, `SystemTicker`, `ProtocolHealth`, `AgentDock` (global), `AgentRail` (tables), `AgentBuilder` (`/agents/new`).
+
+Demo telemetry: `src/store/agent-network.ts` (scripted per-agent loops; `summary()` is cached and selector-safe). Never return a freshly built array/object from a zustand selector.
+
+Copy rules: agents execute user-defined rules; they never predict, earn, or improve returns. Use collected / settled / claimed.

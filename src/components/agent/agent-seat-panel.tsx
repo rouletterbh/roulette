@@ -38,7 +38,10 @@ export function AgentSeatPanel({ owner, tableId, balance, shared, practice, clas
               Last agent <span className="text-ink">{lastStopped.name}</span> stopped: {lastStopped.stoppedReason}. Net {lastStopped.net >= 0 ? "+" : ""}{formatNumber(lastStopped.net)} over {lastStopped.roundsPlayed} rounds. <Link href={`/agent/${lastStopped.id}`} className="underline underline-offset-2">Log</Link>
             </p>
           )}
-          <Button size="sm" variant="outline" className="mt-4 w-full" onClick={() => setBuilding(true)}>Create an agent</Button>
+          <div className="mt-4 flex gap-2">
+            <Button size="sm" variant="accent" className="flex-1" href={`/agents/new?table=${encodeURIComponent(tableId)}`}>Program an agent</Button>
+            <Button size="sm" variant="ghost" onClick={() => setBuilding(true)}>Quick rules</Button>
+          </div>
         </div>
       )}
 

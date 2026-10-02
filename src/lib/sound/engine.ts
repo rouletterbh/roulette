@@ -55,4 +55,10 @@ export const sfx = {
   win: () => { tone(660, 0.18, "sine", 0.07); tone(880, 0.2, "sine", 0.07, 0.12); tone(1320, 0.3, "sine", 0.06, 0.24); },
   lose: () => tone(220, 0.25, "sine", 0.04),
   claim: () => { tone(523, 0.15, "sine", 0.06); tone(784, 0.25, "sine", 0.06, 0.1); },
+  // Agent machine sounds: quieter than table sounds.
+  agentOn: () => { tone(880, 0.05, "sine", 0.02); tone(1320, 0.07, "sine", 0.02, 0.06); },
+  agentMatch: () => tone(1180, 0.04, "triangle", 0.018),
+  agentLock: () => { tone(300, 0.06, "square", 0.012); tone(240, 0.08, "sine", 0.015, 0.05); },
+  agentSettle: () => tone(660, 0.12, "sine", 0.018),
+  agentLeash: () => { tone(220, 0.18, "sine", 0.025); tone(180, 0.22, "sine", 0.02, 0.12); },
 };

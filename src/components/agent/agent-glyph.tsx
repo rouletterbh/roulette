@@ -2,6 +2,8 @@ import { glyphMotion, stateColorVar, type AgentState } from "@/lib/agent/states"
 import { hashString } from "@/lib/demo/prng";
 import { cn } from "@/lib/utils";
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 /**
  * AgentGlyph: a unique, abstract machine mark per agent (rings, ticks, orbiting
  * nodes, spokes) whose motion encodes its state. No faces, no robots.
@@ -24,7 +26,7 @@ export function AgentGlyph({ seed, state = "observing", size = 40, className, ti
           const a = (i / ticks) * Math.PI * 2;
           const long = i % 3 === 0;
           const r1 = long ? 26 : 28;
-          return <line key={i} x1={32 + r1 * Math.cos(a)} y1={32 + r1 * Math.sin(a)} x2={32 + 30 * Math.cos(a)} y2={32 + 30 * Math.sin(a)} stroke="currentColor" strokeWidth={long ? 1.2 : 0.7} opacity={long ? 0.9 : 0.5} />;
+          return <line key={i} x1={r2(32 + r1 * Math.cos(a))} y1={r2(32 + r1 * Math.sin(a))} x2={r2(32 + 30 * Math.cos(a))} y2={r2(32 + 30 * Math.sin(a))} stroke="currentColor" strokeWidth={long ? 1.2 : 0.7} opacity={long ? 0.9 : 0.5} />;
         })}
         <circle className="g-scan" cx="32" cy="32" r="30" fill="none" stroke={color} strokeWidth="1.6" strokeDasharray="40 180" strokeLinecap="round" opacity={motion === "observing" ? 1 : 0} />
       </g>
@@ -35,7 +37,7 @@ export function AgentGlyph({ seed, state = "observing", size = 40, className, ti
         <circle cx="32" cy="32" r={innerR + 6} fill="none" stroke="currentColor" strokeWidth="0.8" opacity="0.55" />
         {Array.from({ length: spokes }).map((_, i) => {
           const a = (i / spokes) * Math.PI * 2;
-          return <line key={i} x1={32 + (innerR - 2) * Math.cos(a)} y1={32 + (innerR - 2) * Math.sin(a)} x2={32 + (innerR + 6) * Math.cos(a)} y2={32 + (innerR + 6) * Math.sin(a)} stroke="currentColor" strokeWidth="0.9" opacity="0.7" />;
+          return <line key={i} x1={r2(32 + (innerR - 2) * Math.cos(a))} y1={r2(32 + (innerR - 2) * Math.sin(a))} x2={r2(32 + (innerR + 6) * Math.cos(a))} y2={r2(32 + (innerR + 6) * Math.sin(a))} stroke="currentColor" strokeWidth="0.9" opacity="0.7" />;
         })}
         <circle cx="32" cy="32" r={innerR - 3} fill="none" stroke="currentColor" strokeWidth="1.2" />
         <circle cx="32" cy="32" r="2.2" fill={accent ? color : "currentColor"} />
@@ -43,7 +45,7 @@ export function AgentGlyph({ seed, state = "observing", size = 40, className, ti
       {Array.from({ length: nodes }).map((_, i) => {
         const a = ((i / nodes) * Math.PI * 2) + (rot * Math.PI) / 180;
         const r = 20;
-        return <circle key={i} className="g-node" cx={32 + r * Math.cos(a)} cy={32 + r * Math.sin(a)} r={i === 0 ? 2.4 : 1.6} fill={i === 0 ? color : "currentColor"} opacity={i === 0 ? 1 : 0.6} style={{ animationDelay: `${i * 0.18}s` }} />;
+        return <circle key={i} className="g-node" cx={r2(32 + r * Math.cos(a))} cy={r2(32 + r * Math.sin(a))} r={i === 0 ? 2.4 : 1.6} fill={i === 0 ? color : "currentColor"} opacity={i === 0 ? 1 : 0.6} style={{ animationDelay: `${i * 0.18}s` }} />;
       })}
     </svg>
   );

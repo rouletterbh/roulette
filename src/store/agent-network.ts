@@ -52,15 +52,34 @@ export interface TableRound {
   exposurePct: number;
 }
 
+export interface NetworkSummary { active: number; observing: number; executing: number; paused: number; settling: number; stopped: number }
+
+export function summarize(a: NetAgent[]): NetworkSummary {
+  const by = (f: (s: AgentState) => boolean) => a.filter((x) => f(x.state)).length;
+  return {
+    active: by((s) => s !== "paused" && s !== "sleeping" && s !== "stopped"),
+    observing: by((s) => s === "observing" || s === "waiting"),
+    executing: by((s) => s === "thinking" || s === "leash-check" || s === "prepared" || s === "executing" || s === "locked"),
+    paused: by((s) => s === "paused" || s === "sleeping"),
+    settling: by((s) => s === "settling" || s === "collected"),
+    stopped: by((s) => s === "stopped"),
+  };
+}
+
+const EMPTY_SUMMARY: NetworkSummary = { active: 0, observing: 0, executing: 0, paused: 0, settling: 0, stopped: 0 };
+
 interface NetworkState {
   started: boolean;
   agents: NetAgent[];
+  /** Cached; recomputed only when agents change. Stable reference for selectors. */
+  summaryCache: NetworkSummary;
   tables: Record<string, TableRound>;
   events: TelemetryEvent[];
   totals: { decisions: number; skips: number; collections: number };
   start: () => void;
   tick: () => void;
-  summary: () => { active: number; observing: number; executing: number; paused: number; settling: number; stopped: number };
+  /** Returns the cached summary (stable reference). Safe to use inside selectors. */
+  summary: () => NetworkSummary;
 }
 
 const TABLES = ["neon-01", "classic", "late-shift"];
@@ -106,6 +125,7 @@ function initTables(): Record<string, TableRound> {
 export const useAgentNetwork = create<NetworkState>()((set, get) => ({
   started: false,
   agents: [],
+  summaryCache: EMPTY_SUMMARY,
   tables: {},
   events: [],
   totals: { decisions: 1821, skips: 348, collections: 12 },
@@ -113,20 +133,9 @@ export const useAgentNetwork = create<NetworkState>()((set, get) => ({
     if (get().started) return;
     const agents = initAgents();
     const tables = initTables();
-    set({ started: true, agents, tables, events: [ev("system", null, "neon-01", tables["neon-01"].roundId, "Agent network online. Demo telemetry.")] });
+    set({ started: true, agents, summaryCache: summarize(agents), tables, events: [ev("system", null, "neon-01", tables["neon-01"].roundId, "Agent network online. Demo telemetry.")] });
   },
-  summary: () => {
-    const a = get().agents;
-    const by = (f: (s: AgentState) => boolean) => a.filter((x) => f(x.state)).length;
-    return {
-      active: by((s) => s !== "paused" && s !== "sleeping" && s !== "stopped"),
-      observing: by((s) => s === "observing" || s === "waiting"),
-      executing: by((s) => s === "thinking" || s === "leash-check" || s === "prepared" || s === "executing" || s === "locked"),
-      paused: by((s) => s === "paused" || s === "sleeping"),
-      settling: by((s) => s === "settling" || s === "collected"),
-      stopped: by((s) => s === "stopped"),
-    };
-  },
+  summary: () => get().summaryCache,
   tick: () => {
     const s = get();
     if (!s.started) return;
@@ -238,6 +247,7 @@ export const useAgentNetwork = create<NetworkState>()((set, get) => ({
       return next;
     });
 
-    if (events.length || agents !== s.agents) set({ agents, tables, totals, events: [...s.events, ...events].slice(-120) });
+    const changed = agents.some((a, i) => a !== s.agents[i]);
+    if (events.length || changed) set({ agents, summaryCache: changed ? summarize(agents) : s.summaryCache, tables, totals, events: [...s.events, ...events].slice(-120) });
   },
 }));

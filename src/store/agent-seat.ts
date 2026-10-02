@@ -6,6 +6,7 @@ import { betFromId } from "@/lib/roulette/bets";
 import { colorOf } from "@/lib/roulette/constants";
 import { agentCode, type StrategyClass } from "@/lib/agent/states";
 import type { DecisionTrace } from "@/components/agent/agent-decision-trace";
+import { sfx } from "@/lib/sound/engine";
 
 /**
  * Agent seats: a rule-based agent a player attaches to their own seat.
@@ -171,7 +172,7 @@ export const useAgentSeats = create<AgentSeatState>()(
         set({ seats: { ...get().seats, [id]: seat } });
         return { ok: true, id };
       },
-      approve: (id) => patch(set, get, id, (s) => ({ status: "active", approvedAt: Date.now(), log: [...s.log, log("approved", "Approved by owner. Agent is live.")] })),
+      approve: (id) => { sfx.agentOn(); patch(set, get, id, (s) => ({ status: "active", approvedAt: Date.now(), log: [...s.log, log("approved", "Approved by owner. Agent is live.")] })); },
       pause: (id) => patch(set, get, id, (s) => (s.status === "active" ? { status: "paused", log: [...s.log, log("paused", "Paused by owner.")] } : {})),
       resume: (id) => patch(set, get, id, (s) => (s.status === "paused" ? { status: "active", log: [...s.log, log("resumed", "Resumed by owner.")] } : {})),
       stop: (id, reason) => patch(set, get, id, (s) => (s.status === "stopped" ? {} : { status: "stopped", stoppedReason: reason, log: [...s.log, log("stopped", reason)] })),
