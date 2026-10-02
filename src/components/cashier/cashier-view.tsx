@@ -17,12 +17,20 @@ import { chipDenominations } from "@/config/tokens";
 import { explorerTx } from "@/config/chains";
 import { cn, formatUsd, formatNumber, shortAddress, relativeTime } from "@/lib/utils";
 import { track, bucketAmount } from "@/lib/analytics/events";
+import { siteConfig } from "@/config/site";
+import { ChainCashier } from "./chain-cashier";
 
 const TABS = ["deposit", "chips", "claim", "withdraw"] as const;
 type Tab = (typeof TABS)[number];
 const CHIP_PRICE_USD = 1;
 
+/** Demo mode keeps the simulated cashier; otherwise the live contracts are used. */
 export function CashierView() {
+  if (!siteConfig.demoMode) return <ChainCashier />;
+  return <DemoCashier />;
+}
+
+function DemoCashier() {
   const router = useRouter();
   const params = useSearchParams();
   const tabParam = params.get("tab") as Tab | null;

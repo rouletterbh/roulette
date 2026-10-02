@@ -34,6 +34,9 @@ import { AgentRail } from "@/components/table/agent-rail";
 import { RoundTelemetry } from "@/components/agent/round-telemetry";
 import { useAgentNetwork } from "@/store/agent-network";
 import { useState, useCallback } from "react";
+import { siteConfig } from "@/config/site";
+import { useChainGame } from "@/store/chain-game";
+import { ChainGameDriver } from "./chain-game-driver";
 
 export interface GameTableConfig {
   mode: GameMode;
@@ -76,6 +79,10 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
 
   const practice = config.mode === "practice";
   const shared = config.mode === "live" || config.mode === "private";
+  // Real chain integration: rounds, escrow and bets are driven by ChainGameDriver.
+  const chainDriven = !siteConfig.demoMode && !practice;
+  const chainPlaceBets = useChainGame((s) => s.placeBets);
+  const chainLeaveTable = useChainGame((s) => s.leaveTable);
   const needsWallet = !practice;
   const connected = wallet.status === "connected";
   const speed = config.speed ?? "standard";
@@ -86,10 +93,10 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
     if (needsWallet && !connected) return;
     initialized.current = true;
     const treasury = practice ? undefined : demoTreasury;
-    g.init(config.mode, practice ? PRACTICE_BALANCE : chips.balance);
+    g.init(config.mode, practice ? PRACTICE_BALANCE : chainDriven ? 0 : chips.balance);
     if (treasury) useGame.setState({ treasury: { ...treasury } });
     if (config.recent?.length) useGame.setState({ recent: [...config.recent] });
-    if (shared) live.start(config.tableId ?? config.name, speed, config.seats ?? 6);
+    if (shared) live.start(config.tableId ?? config.name, speed, config.seats ?? 6, chainDriven);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected]);
 
@@ -97,7 +104,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
   useEffect(() => {
     return () => {
       if (!initialized.current || practice) return;
-      useChips.getState().setBalance(useGame.getState().balance);
+      if (!chainDriven) useChips.getState().setBalance(useGame.getState().balance);
       useLiveTable.getState().stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,10 +112,10 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
 
   // Solo modes auto-advance after a result; shared tables are driven by the table timer.
   useEffect(() => {
-    if (shared || g.phase !== "result") return;
+    if (shared || chainDriven || g.phase !== "result") return;
     const id = setTimeout(() => g.nextRound(), 5000);
     return () => clearTimeout(id);
-  }, [g.phase, g.roundId, g, shared]);
+  }, [g.phase, g.roundId, g, shared, chainDriven]);
 
   useEffect(() => {
     if (!shared || !initialized.current) return;
@@ -140,16 +147,17 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
   const bettingOpen = g.phase === "betting";
   const result = g.pendingReveal?.result ?? null;
   const unit = "chips";
+  const onPlace = chainDriven ? chainPlaceBets : g.placeBets;
   const selfName = wallet.ensName ?? (wallet.address ? shortAddress(wallet.address) : "You");
   const selfAddress = wallet.address ?? "0x0000000000000000000000000000000000000000";
-  const statusLabel = bettingOpen ? (shared ? `Bets open · ${live.secondsLeft()}s` : "Bets open") : g.phase === "closed" ? "Betting closed" : spinning ? "No more bets" : "Result";
+  const statusLabel = bettingOpen ? (shared && !chainDriven ? `Bets open · ${live.secondsLeft()}s` : "Bets open") : g.phase === "closed" ? "Betting closed" : spinning ? "No more bets" : chainDriven ? "Waiting for next round" : "Result";
 
   return (
     <div className="container-edge pb-28 pt-6 lg:pb-16">
       {/* table header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
         <div className="flex items-center gap-4">
-          {shared && <RoundTimer endsAt={live.bettingEndsAt} duration={SPEED_MS[speed]} active={bettingOpen} size={56} />}
+          {shared && !chainDriven && <RoundTimer endsAt={live.bettingEndsAt} duration={SPEED_MS[speed]} active={bettingOpen} size={56} />}
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="font-display text-3xl leading-none">{config.name}</h1>
@@ -171,11 +179,15 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
           <SoundToggle />
           {practice ? (
             <button type="button" onClick={() => g.init("practice", PRACTICE_BALANCE)} className="h-9 rounded-full border border-border px-3 text-[12px] font-medium hover:border-ink">Reset</button>
+          ) : chainDriven ? (
+            <Button variant="outline" size="sm" onClick={chainLeaveTable}>Leave table</Button>
           ) : (
             <Button href={config.mode === "quick" ? "/play" : "/tables"} variant="outline" size="sm">Leave table</Button>
           )}
         </div>
       </div>
+
+      {chainDriven && <ChainGameDriver config={config} />}
 
       <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)_320px] lg:gap-8">
         {/* LEFT */}
@@ -228,7 +240,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
                 {statusLabel}
               </span>
             </div>
-            <RoundResult round={g.lastRound} visible={g.phase === "result"} onNext={shared ? () => {} : g.nextRound} unit={unit} hideNext={shared} />
+            <RoundResult round={g.lastRound} visible={g.phase === "result"} onNext={shared || chainDriven ? () => {} : g.nextRound} unit={unit} hideNext={shared || chainDriven} />
           </div>
 
           {shared && (
@@ -247,7 +259,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
         {/* RIGHT */}
         <aside className="order-2 lg:order-3">
           <div className="flex flex-col gap-4 lg:sticky lg:top-24">
-            <BetSlip bets={placed} totalWager={total} liability={liability} balance={g.balance} phase={g.phase} onPlace={g.placeBets} onRemove={g.removeBet} error={g.error} practice={practice} maxRoundExposure={safe.maxRoundExposure} locked={g.betsLocked} shared={shared} />
+            <BetSlip bets={placed} totalWager={total} liability={liability} balance={g.balance} phase={g.phase} onPlace={onPlace} onRemove={g.removeBet} error={g.error} practice={practice} maxRoundExposure={safe.maxRoundExposure} locked={g.betsLocked} shared={shared} />
             <AgentSeatPanel owner={practice ? "practice" : selfAddress} tableId={config.tableId ?? config.mode} balance={g.balance} shared={shared} practice={practice} />
             {shared ? (
               <>
@@ -274,7 +286,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
             <div className="tnum"><span className="font-medium text-ink">{formatNumber(total)}</span> wagered</div>
             <div className="tnum">Balance {formatNumber(g.balance)}</div>
           </div>
-          <Button size="lg" variant={bettingOpen && !g.betsLocked ? "accent" : "outline"} disabled={!bettingOpen || placed.length === 0 || g.betsLocked} onClick={g.placeBets} className="min-w-[160px]">
+          <Button size="lg" variant={bettingOpen && !g.betsLocked ? "accent" : "outline"} disabled={!bettingOpen || placed.length === 0 || g.betsLocked} onClick={onPlace} className="min-w-[160px]">
             {bettingOpen ? (g.betsLocked ? "Bets in" : shared ? "Lock bets" : "Place bet") : g.phase === "closed" ? "Closed" : spinning ? "Spinning…" : "Settled"}
           </Button>
         </div>

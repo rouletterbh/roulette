@@ -47,8 +47,12 @@ interface LiveTableState {
   reported: Set<string>;
   scheduled: Array<{ at: number; seat: number; bet: PlacedBet }>;
   recentWinners: Array<{ player: DemoPlayer; amount: number; bet: string; at: number }>;
+  /** True when round open/close is driven by the chain (ChainGameDriver): the timer never closes or advances rounds. */
+  externalRounds: boolean;
+  /** Last game-store roundId the ambience was scheduled for (externalRounds only). */
+  roundSeen: number;
 
-  start: (tableId: string, speed: TableSpeed, seatCount: number) => void;
+  start: (tableId: string, speed: TableSpeed, seatCount: number, externalRounds?: boolean) => void;
   stop: () => void;
   tick: () => void;
   react: (emoji: string) => void;
@@ -78,8 +82,10 @@ export const useLiveTable = create<LiveTableState>()((set, get) => ({
   reported: new Set(),
   scheduled: [],
   recentWinners: [],
+  externalRounds: false,
+  roundSeen: 0,
 
-  start: (tableId, speed, seatCount) => {
+  start: (tableId, speed, seatCount, externalRounds = false) => {
     const rnd = mulberry32(hashString(tableId));
     const picks = [...demoPlayers].sort(() => rnd() - 0.5).slice(0, Math.max(1, Math.min(seatCount, demoPlayers.length)));
     const seats: SeatPlayer[] = picks.map((p, i) => ({ ...p, seat: i + 1, bets: [], roundNet: null, lastSeen: Date.now() }));
@@ -94,6 +100,8 @@ export const useLiveTable = create<LiveTableState>()((set, get) => ({
       resultShownAt: null,
       scheduled: scheduleBets(seats, now, SPEED_MS[speed], rnd),
       recentWinners: [],
+      externalRounds,
+      roundSeen: 0,
     });
   },
 
@@ -106,6 +114,13 @@ export const useLiveTable = create<LiveTableState>()((set, get) => ({
     const now = Date.now();
 
     if (g.phase === "betting") {
+      if (t.externalRounds && t.roundSeen !== g.roundId) {
+        // The chain opened a new round: reset seat-mates and schedule their ambience bets.
+        const rnd = mulberry32(hashString(`${t.tableId}-${g.roundId}`));
+        const seats = t.seats.map((s) => ({ ...s, bets: [], roundNet: null }));
+        set({ seats, bettingEndsAt: now + SPEED_MS[t.speed], resultShownAt: null, scheduled: scheduleBets(seats, now, SPEED_MS[t.speed], rnd), roundSeen: g.roundId });
+        return;
+      }
       // emit scheduled seat-mate bets
       const due = t.scheduled.filter((s) => s.at <= now);
       if (due.length) {
@@ -120,7 +135,7 @@ export const useLiveTable = create<LiveTableState>()((set, get) => ({
         }
         set({ seats, feed: feed.slice(-80), scheduled: t.scheduled.filter((s) => s.at > now) });
       }
-      if (now >= t.bettingEndsAt) {
+      if (now >= t.bettingEndsAt && !t.externalRounds) {
         g.closeRound();
         set({ feed: [...get().feed, { id: fid(), kind: "system" as const, at: now, text: "Betting closed." }].slice(-80) });
       }
@@ -156,6 +171,7 @@ export const useLiveTable = create<LiveTableState>()((set, get) => ({
     }
 
     if (g.phase === "result" && t.resultShownAt != null && now >= t.resultShownAt + RESULT_MS) {
+      if (t.externalRounds) return; // the chain opens the next round
       g.nextRound();
       const rnd = mulberry32(hashString(`${t.tableId}-${g.roundId + 1}`));
       const seats = t.seats.map((s) => ({ ...s, bets: [], roundNet: null }));

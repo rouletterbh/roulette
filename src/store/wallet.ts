@@ -40,8 +40,13 @@ export const useWallet = create<WalletState>()(
           return;
         }
         try {
-          const [{ connect }, { injected }, { wagmiConfig }] = await Promise.all([import("wagmi/actions"), import("wagmi/connectors"), import("@/lib/web3/wagmi")]);
-          await connect(wagmiConfig, { connector: injected() });
+          const [{ connect }, { injected, walletConnect }, { wagmiConfig }] = await Promise.all([import("wagmi/actions"), import("wagmi/connectors"), import("@/lib/web3/wagmi")]);
+          // Injected (browser extension / in-app) first; WalletConnect when no provider is injected and a project id is set.
+          const hasInjected = typeof window !== "undefined" && !!(window as { ethereum?: unknown }).ethereum;
+          const wcId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+          const connector = hasInjected || !wcId ? injected() : walletConnect({ projectId: wcId, showQrModal: true });
+          await connect(wagmiConfig, { connector });
+          // Robinhood Chain has no ENS: ensName stays null; Web3Provider mirrors address/status.
         } catch {
           set({ status: "disconnected" });
         }
