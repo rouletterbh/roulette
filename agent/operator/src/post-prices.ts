@@ -8,7 +8,7 @@
  * Safety: skips an update when the move exceeds MAX_DEVIATION_BPS (default 2000) and
  * logs loudly instead; an ADMIN must acknowledge with forcePrice. Never posts a zero price.
  */
-import { createPublicClient, createWalletClient, http, parseAbi, parseUnits, defineChain } from "viem";
+import { createPublicClient, createWalletClient, http, parseAbi, parseUnits, defineChain, getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 const ASSETS_DEFAULT = [
@@ -28,7 +28,7 @@ const dry = process.argv.includes("--dry-run");
 const rpc = process.env.RPC_URL ?? "https://rpc.mainnet.chain.robinhood.com";
 const chainId = Number(process.env.CHAIN_ID ?? 4663);
 const chain = defineChain({ id: chainId, name: chainId === 4663 ? "Robinhood Chain" : "Robinhood Chain Testnet", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [rpc] } } });
-const oracle = process.env.ORACLE_ADDRESS as `0x${string}` | undefined;
+const oracle = process.env.ORACLE_ADDRESS ? getAddress(process.env.ORACLE_ADDRESS) : undefined;
 const maxDev = Number(process.env.MAX_DEVIATION_BPS ?? 2000);
 const assets = (process.env.ASSETS?.split(",").map((a) => ({ symbol: a.slice(0, 8), address: a.trim() })) ?? ASSETS_DEFAULT) as Array<{ symbol: string; address: string }>;
 
@@ -50,7 +50,7 @@ async function tick() {
       const q = await fetchPrice(asset.address);
       const p = parseUnits(q.usd.toFixed(18), 18);
       if (oracle) {
-        const [prev] = await pub.readContract({ address: oracle, abi, functionName: "getPrice", args: [asset.address as `0x${string}`] });
+        const [prev] = await pub.readContract({ address: oracle, abi, functionName: "getPrice", args: [getAddress(asset.address)] });
         if (prev > 0n) {
           const diff = p > prev ? p - prev : prev - p;
           if (diff * 10_000n > prev * BigInt(maxDev)) {
@@ -59,7 +59,7 @@ async function tick() {
           }
         }
       }
-      batch.push({ a: asset.address as `0x${string}`, p, t: BigInt(Math.min(q.updatedAt, Math.floor(Date.now() / 1000))), usd: q.usd, symbol: asset.symbol });
+      batch.push({ a: getAddress(asset.address), p, t: BigInt(Math.min(q.updatedAt, Math.floor(Date.now() / 1000))), usd: q.usd, symbol: asset.symbol });
     } catch (e) {
       console.error(`[${asset.symbol}] fetch failed:`, (e as Error).message);
     }
@@ -72,7 +72,7 @@ async function tick() {
     return;
   }
   const pk = process.env.OPERATOR_PRIVATE_KEY as `0x${string}` | undefined;
-  if (!pk) throw new Error("OPERATOR_PRIVATE_KEY required to post (or use --dry-run)");
+  if (!pk || !/^0x[0-9a-fA-F]{64}$/.test(pk)) throw new Error("OPERATOR_PRIVATE_KEY missing or malformed (keystore decrypt failed?) — not posting");
   const wallet = createWalletClient({ account: privateKeyToAccount(pk), chain, transport: http(rpc) });
   const hash = await wallet.writeContract({ address: oracle, abi, functionName: "postPrices", args: [batch.map((b) => b.a), batch.map((b) => b.p), batch.map((b) => b.t)] });
   console.log("posted", hash);

@@ -14,7 +14,7 @@ Deployer / ADMIN / OPERATOR / PAUSER / TREASURER: `0xC80D34d68bAB225890958Cd3326
 | RouletteGame | `0x4d02F58D9e3e0CccaD49dB18ed0609661d61B94A` |
 | RewardVault | `0x83Ea24a4276fe47967F375bc8ca10F870c070A5B` |
 | PlayerRegistry | `0x38466a02990E992560a25fD90deD271288818D5C` |
-| PostedPriceOracle | `0x284c9EcF075D0Fd48fa83C7b8816644392A54e68` |
+| PostedPriceOracle | `0x284C9eCF075D0fD48Fa83C7B8816644392a54E68` |
 
 Config at deploy: chip price 0.00003 ETH, chip USD value $0.10, initial bankroll 0.03 ETH, table 1 limits 1–500 units, split 70/20/8/2 bps, safety reserve 15%, exposure cap 25%, reveal delay 2 blocks. Reward assets registered: CASHCAT, PONS, AI (15 min staleness, $0.50 minimum claim), seed prices posted.
 
