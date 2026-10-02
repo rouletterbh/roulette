@@ -3,8 +3,8 @@ import { validateRules, decide, AGENT_CAPS, type AgentRules, type AgentSeat } fr
 
 const rules: AgentRules = { bets: [{ betId: "red", stake: 2 }], cadence: "every", maxRounds: 20, stopLoss: 20, stopWin: null, timeLimitMinutes: 30 };
 const seat = (over: Partial<AgentSeat> = {}): AgentSeat => ({
-  id: "a", name: "t", thesis: "", collection: { primaryAssetId: null, fallbackAssetId: null }, owner: "o", tableId: "t", rules, allowance: 40, status: "active", isPublic: true, createdAt: 0, approvedAt: 1_000, stoppedReason: null,
-  roundsPlayed: 0, net: 0, lastRoundId: null, lastOutcomeWasLoss: false, log: [], followers: 0, ...over,
+  id: "a", code: "ARC-1", strategyClass: "Adaptive Low Variance", name: "t", thesis: "", collection: { primaryAssetId: null, fallbackAssetId: null }, owner: "o", tableId: "t", rules, allowance: 40, status: "active", isPublic: true, createdAt: 0, approvedAt: 1_000, stoppedReason: null,
+  roundsPlayed: 0, net: 0, lastRoundId: null, lastOutcomeWasLoss: false, log: [], traces: [], decisions: 0, skips: 0, followers: 0, ...over,
 });
 
 describe("agent rules", () => {
@@ -41,5 +41,24 @@ describe("agent decisions", () => {
   it("does nothing while paused or pending", () => {
     expect(decide(seat({ status: "paused" }), 1)).toMatchObject({ act: false });
     expect(decide(seat({ status: "pending-approval" }), 1)).toMatchObject({ act: false });
+  });
+});
+
+describe("thesis conditions", () => {
+  it("evaluates color counts over a window", async () => {
+    const { evaluateCondition } = await import("./agent-seat");
+    const r = evaluateCondition({ type: "color-count", side: "red", window: 5, min: 3 }, [1, 3, 2, 5, 4, 9]); // R R B R B
+    expect(r.matched).toBe(true);
+    expect(r.input).toBe("R R B R B");
+    expect(evaluateCondition({ type: "color-count", side: "black", window: 5, min: 3 }, [1, 3, 2, 5, 4]).matched).toBe(false);
+  });
+  it("treats no condition as always matched", async () => {
+    const { evaluateCondition } = await import("./agent-seat");
+    expect(evaluateCondition(null, []).matched).toBe(true);
+  });
+  it("zero-absent needs a full window without zero", async () => {
+    const { evaluateCondition } = await import("./agent-seat");
+    expect(evaluateCondition({ type: "zero-absent", window: 3, min: 3 }, [1, 2, 3]).matched).toBe(true);
+    expect(evaluateCondition({ type: "zero-absent", window: 3, min: 3 }, [1, 0, 3]).matched).toBe(false);
   });
 });

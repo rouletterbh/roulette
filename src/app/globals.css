@@ -291,3 +291,105 @@ body {
   50% { box-shadow: 0 0 0 10px transparent; }
 }
 .win-pulse { animation: win-pulse 1.2s ease-out 3; }
+
+/* ------------------------------------------------------------------
+   Agent system: semantic states (mostly monochrome; green = active)
+------------------------------------------------------------------ */
+:root {
+  --agent-observing: #6c706a;
+  --agent-thinking: #2a2d2a;
+  --agent-executing: #c8ff00;
+  --agent-settling: #080a08;
+  --agent-paused: #a2a59f;
+  --agent-stopped: #080a08;
+  --agent-warn: #d99a1a;
+  --blueprint: rgba(8, 10, 8, 0.06);
+}
+:root[data-theme="dark"] {
+  --agent-observing: #969b92;
+  --agent-thinking: #d6d9d2;
+  --agent-executing: #c8ff00;
+  --agent-settling: #f5f7f2;
+  --agent-paused: #5f645c;
+  --agent-stopped: #f5f7f2;
+  --agent-warn: #e2b04a;
+  --blueprint: rgba(245, 247, 242, 0.06);
+}
+
+@theme inline {
+  --color-agent-observing: var(--agent-observing);
+  --color-agent-thinking: var(--agent-thinking);
+  --color-agent-executing: var(--agent-executing);
+  --color-agent-settling: var(--agent-settling);
+  --color-agent-paused: var(--agent-paused);
+  --color-agent-stopped: var(--agent-stopped);
+  --color-agent-warn: var(--agent-warn);
+}
+
+/* Blueprint background: faint radial grid + calibration marks. Keeps whitespace. */
+@utility blueprint {
+  position: relative;
+}
+.blueprint::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(var(--blueprint) 1px, transparent 1px),
+    linear-gradient(90deg, var(--blueprint) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+@utility blueprint-radial {
+  position: relative;
+}
+.blueprint-radial::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, var(--blueprint) 0 1px, transparent 1px 72px),
+    repeating-conic-gradient(from 0deg at 50% 50%, var(--blueprint) 0deg 0.35deg, transparent 0.35deg 15deg);
+  mask-image: radial-gradient(circle at 50% 50%, black 20%, transparent 70%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, black 20%, transparent 70%);
+}
+
+/* Micro label: operator vocabulary */
+@utility microlabel {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Glyph motion */
+@keyframes glyph-rotate { to { transform: rotate(360deg); } }
+@keyframes glyph-scan { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -220; } }
+@keyframes glyph-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes glyph-sweep { to { transform: rotate(360deg); } }
+@keyframes glyph-converge { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.72); opacity: 0.6; } }
+.glyph-idle .g-outer { animation: glyph-rotate 24s linear infinite; }
+.glyph-observing .g-outer { animation: glyph-rotate 24s linear infinite; }
+.glyph-observing .g-scan { animation: glyph-scan 2.4s linear infinite; }
+.glyph-thinking .g-node { animation: glyph-pulse 1.1s ease-in-out infinite; }
+.glyph-executing .g-sweep { animation: glyph-sweep 0.9s linear infinite; }
+.glyph-settling .g-inner { animation: glyph-converge 1.4s ease-in-out infinite alternate; }
+.glyph-paused * { animation: none !important; }
+.glyph-stopped * { animation: none !important; }
+.g-outer, .g-sweep, .g-inner, .g-node { transform-origin: 50% 50%; transform-box: fill-box; }
+
+/* Trace line draw */
+@keyframes trace-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.trace-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: trace-draw 1.2s var(--ease-out-expo) forwards; }
+@keyframes trace-flow { to { stroke-dashoffset: -24; } }
+.trace-flow { stroke-dasharray: 2 6; animation: trace-flow 1.6s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph-idle *, .glyph-observing *, .glyph-thinking *, .glyph-executing *, .glyph-settling *, .trace-draw, .trace-flow { animation: none !important; }
+}

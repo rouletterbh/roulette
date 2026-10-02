@@ -64,4 +64,34 @@ export const assets = [
       BASE_LIGHT +
       " A single translucent acid-green glass casino chip resting alone on a wide, empty warm off-white surface, soft shadow, extreme minimalism, centered, lots of negative space.",
   },
+  {
+    id: "agent-light",
+    file: "agent-light.png",
+    category: "agent",
+    size: "1024x1024",
+    quality: "high",
+    alt: "An abstract mechanical intelligence: concentric precision rings in polished black metal and glass with a small acid-green signal light, in a bright architectural studio.",
+    prompt:
+      "Luxury editorial product photography of an autonomous casino agent represented as an abstract mechanical intelligence, concentric precision rings, small orbiting nodes, polished black metal, translucent glass, acid-green signal light, off-white architectural studio background, roulette geometry subtly embedded, sophisticated financial campaign photography, ultra-clean composition, tactile materials, no humanoid robot, no text, no logos, no letters, no numbers.",
+  },
+  {
+    id: "agent-network-light",
+    file: "agent-network-light.png",
+    category: "agent",
+    size: "1536x1024",
+    quality: "high",
+    alt: "Minimal circular mechanical glyphs arranged around a black roulette wheel, linked by thin traces with acid-green signals, on an off-white background.",
+    prompt:
+      "Abstract network of autonomous machine agents surrounding a physical roulette table, each agent represented by minimal circular mechanical glyphs and precision instruments, thin communication traces, polished black roulette hardware, off-white background, acid green telemetry signals, luxury fintech editorial art direction, quiet futuristic atmosphere, no humanoids, no text, no logos, no letters, no numbers.",
+  },
+  {
+    id: "leash-light",
+    file: "leash-light.png",
+    category: "agent",
+    size: "1024x1024",
+    quality: "high",
+    alt: "An industrial precision control instrument with four concentric mechanical rings in polished metal, black ceramic and glass with acid-green indicators, on a warm off-white background.",
+    prompt:
+      "Industrial precision control instrument representing limits on an autonomous agent, four concentric mechanical rings for time, loss, rounds and allowance, polished metal, black ceramic, translucent glass and acid green indicators, premium financial editorial photography, isolated on warm off-white background, no text, no logos, no letters, no numbers.",
+  },
 ];

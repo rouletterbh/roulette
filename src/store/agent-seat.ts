@@ -3,6 +3,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { betFromId } from "@/lib/roulette/bets";
+import { colorOf } from "@/lib/roulette/constants";
+import { agentCode, type StrategyClass } from "@/lib/agent/states";
+import type { DecisionTrace } from "@/components/agent/agent-decision-trace";
 
 /**
  * Agent seats: a rule-based agent a player attaches to their own seat.
@@ -12,16 +15,30 @@ import { betFromId } from "@/lib/roulette/bets";
  * never touches outcomes and is bound by the same treasury limits as a human.
  */
 export type AgentStatus = "pending-approval" | "active" | "paused" | "stopped";
-export type AgentCadence = "every" | "every-other" | "after-loss";
+export type AgentCadence = "every" | "every-other" | "after-loss" | "interval" | "after-condition";
 
 export interface AgentBet {
   betId: string;
   stake: number;
 }
 
+/** Optional thesis condition evaluated against recent results before acting. */
+export interface AgentCondition {
+  type: "color-count" | "parity-count" | "half-count" | "zero-absent";
+  /** For color/parity/half counts: which side must appear. */
+  side?: "red" | "black" | "odd" | "even" | "low" | "high";
+  window: number;
+  min: number;
+}
+
 export interface AgentRules {
   bets: AgentBet[];
   cadence: AgentCadence;
+  /** Every N rounds when cadence is "interval". */
+  interval?: number;
+  condition?: AgentCondition | null;
+  /** Hard cap per decision, in chips. */
+  maxBet?: number;
   maxRounds: number;
   /** Mandatory. Stop once net loss reaches this many chips. */
   stopLoss: number;
@@ -42,6 +59,9 @@ export interface AgentLogItem {
 
 export interface AgentSeat {
   id: string;
+  /** Machine code like ARC-7. */
+  code: string;
+  strategyClass: StrategyClass;
   name: string;
   /** One-line public thesis. */
   thesis: string;
@@ -61,6 +81,9 @@ export interface AgentSeat {
   lastRoundId: number | null;
   lastOutcomeWasLoss: boolean;
   log: AgentLogItem[];
+  traces: DecisionTrace[];
+  decisions: number;
+  skips: number;
   followers: number;
 }
 
@@ -75,7 +98,8 @@ export const AGENT_CAPS = {
 
 interface AgentSeatState {
   seats: Record<string, AgentSeat>;
-  create: (input: { name: string; thesis?: string; collection?: AgentSeat["collection"]; owner: string; tableId: string; rules: AgentRules; allowance: number; isPublic: boolean }) => { ok: true; id: string } | { ok: false; error: string };
+  create: (input: { name: string; thesis?: string; strategyClass?: StrategyClass; collection?: AgentSeat["collection"]; owner: string; tableId: string; rules: AgentRules; allowance: number; isPublic: boolean }) => { ok: true; id: string } | { ok: false; error: string };
+  recordTrace: (id: string, trace: DecisionTrace) => void;
   approve: (id: string) => void;
   pause: (id: string) => void;
   resume: (id: string) => void;
@@ -121,6 +145,7 @@ export function decide(seat: AgentSeat, roundId: number, now = Date.now()): { ac
   if (seat.approvedAt != null && now - seat.approvedAt >= seat.rules.timeLimitMinutes * 60_000) return { act: false, stop: "Time limit reached." };
   const perRound = seat.rules.bets.reduce((s, b) => s + b.stake, 0);
   if (seat.allowance + Math.min(0, seat.net) < perRound) return { act: false, stop: "Allowance exhausted." };
+  if (seat.rules.cadence === "interval" && seat.lastRoundId != null && roundId - seat.lastRoundId < Math.max(1, seat.rules.interval ?? 3)) return { act: false, skip: `cadence: every ${seat.rules.interval ?? 3} rounds` };
   if (seat.rules.cadence === "every-other" && seat.roundsPlayed % 2 === 1 && seat.lastRoundId != null && roundId - seat.lastRoundId < 2) return { act: false, skip: "cadence: every other round" };
   if (seat.rules.cadence === "after-loss" && seat.roundsPlayed > 0 && !seat.lastOutcomeWasLoss) return { act: false, skip: "cadence: waits for a loss" };
   return { act: true };
@@ -130,14 +155,17 @@ export const useAgentSeats = create<AgentSeatState>()(
   persist(
     (set, get) => ({
       seats: {},
-      create: ({ name, thesis = "", collection = { primaryAssetId: null, fallbackAssetId: null }, owner, tableId, rules, allowance, isPublic }) => {
+      create: ({ name, thesis = "", strategyClass = "Adaptive Low Variance", collection = { primaryAssetId: null, fallbackAssetId: null }, owner, tableId, rules, allowance, isPublic }) => {
         const err = validateRules(rules, allowance, Infinity);
         if (err) return { ok: false, error: err };
         const id = `agent-${lid()}`;
         const seat: AgentSeat = {
-          id, name: name.trim() || "Untitled agent", thesis: thesis.trim().slice(0, 120), collection, owner, tableId, rules, allowance, status: "pending-approval", isPublic,
+          id, code: agentCode(id), strategyClass, name: name.trim() || "Untitled agent", thesis: thesis.trim().slice(0, 120), collection, owner, tableId, rules, allowance, status: "pending-approval", isPublic,
           createdAt: Date.now(), approvedAt: null, stoppedReason: null, roundsPlayed: 0, net: 0, lastRoundId: null, lastOutcomeWasLoss: false,
           log: [log("created", `Rules set: ${rules.bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ")} · ${rules.cadence} · stop-loss ${rules.stopLoss} · ${rules.maxRounds} rounds · ${rules.timeLimitMinutes} min`)],
+          traces: [],
+          decisions: 0,
+          skips: 0,
           followers: 0,
         };
         set({ seats: { ...get().seats, [id]: seat } });
@@ -152,8 +180,9 @@ export const useAgentSeats = create<AgentSeatState>()(
         void _removed;
         set({ seats: rest });
       },
-      recordBet: (id, roundId, bets) => patch(set, get, id, (s) => ({ lastRoundId: roundId, log: [...s.log, log("bet", `Round #${roundId}: ${bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ")}`)].slice(-200) })),
-      recordSkip: (id, roundId, why) => patch(set, get, id, (s) => ({ lastRoundId: roundId, log: [...s.log, log("skip", `Round #${roundId}: skipped (${why})`)].slice(-200) })),
+      recordTrace: (id, trace) => patch(set, get, id, (s) => ({ traces: [...s.traces, trace].slice(-200) })),
+      recordBet: (id, roundId, bets) => patch(set, get, id, (s) => ({ lastRoundId: roundId, decisions: s.decisions + 1, log: [...s.log, log("bet", `Round #${roundId}: ${bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ")}`)].slice(-200) })),
+      recordSkip: (id, roundId, why) => patch(set, get, id, (s) => ({ lastRoundId: roundId, skips: s.skips + 1, log: [...s.log, log("skip", `Round #${roundId}: skipped (${why})`)].slice(-200) })),
       recordResult: (id, roundId, result, delta) =>
         patch(set, get, id, (s) => ({
           roundsPlayed: s.roundsPlayed + 1,
@@ -163,7 +192,19 @@ export const useAgentSeats = create<AgentSeatState>()(
         })),
       activeFor: (owner, tableId) => Object.values(get().seats).find((s) => s.owner === owner && s.tableId === tableId && s.status !== "stopped"),
     }),
-    { name: "agent-seats" },
+    {
+      name: "agent-seats",
+      version: 2,
+      migrate: (persisted) => {
+        const p = persisted as { seats?: Record<string, Partial<AgentSeat>> };
+        const seats: Record<string, AgentSeat> = {};
+        for (const [k, v] of Object.entries(p.seats ?? {})) {
+          const defaults: Partial<AgentSeat> = { code: agentCode(k), strategyClass: "Adaptive Low Variance", thesis: "", collection: { primaryAssetId: null, fallbackAssetId: null }, traces: [], decisions: 0, skips: 0 };
+          seats[k] = Object.assign(defaults, v) as AgentSeat;
+        }
+        return { ...p, seats };
+      },
+    },
   ),
 );
 
@@ -171,4 +212,44 @@ function patch(set: (p: Partial<AgentSeatState>) => void, get: () => AgentSeatSt
   const s = get().seats[id];
   if (!s) return;
   set({ seats: { ...get().seats, [id]: { ...s, ...fn(s) } } });
+}
+
+/** Encode recent results as a compact input string, newest first: "R B R R B". */
+export function inputString(recent: number[], window: number) {
+  return recent.slice(0, window).map((n) => (n === 0 ? "G" : colorOf(n) === "red" ? "R" : "B")).join(" ") || "—";
+}
+
+/** Evaluate a thesis condition against recent results (newest first). */
+export function evaluateCondition(cond: AgentCondition | null | undefined, recent: number[]): { matched: boolean; input: string; rule: string } {
+  if (!cond) return { matched: true, input: inputString(recent, 5), rule: "No condition. Acts on cadence." };
+  const win = recent.slice(0, cond.window);
+  const count = (pred: (n: number) => boolean) => win.filter(pred).length;
+  let c = 0;
+  let rule = "";
+  switch (cond.type) {
+    case "color-count":
+      c = count((n) => n !== 0 && colorOf(n) === cond.side);
+      rule = `${cond.side} count in last ${cond.window} ≥ ${cond.min}`;
+      break;
+    case "parity-count":
+      c = count((n) => n !== 0 && (cond.side === "odd" ? n % 2 === 1 : n % 2 === 0));
+      rule = `${cond.side} count in last ${cond.window} ≥ ${cond.min}`;
+      break;
+    case "half-count":
+      c = count((n) => n !== 0 && (cond.side === "low" ? n <= 18 : n >= 19));
+      rule = `${cond.side} (${cond.side === "low" ? "1–18" : "19–36"}) count in last ${cond.window} ≥ ${cond.min}`;
+      break;
+    case "zero-absent":
+      c = win.length - count((n) => n === 0);
+      rule = `no zero in last ${cond.window}`;
+      break;
+  }
+  const matched = win.length >= Math.min(cond.window, cond.min) && (cond.type === "zero-absent" ? c === win.length && win.length > 0 : c >= cond.min);
+  return { matched, input: inputString(recent, cond.window), rule };
+}
+
+export function describeRules(rules: AgentRules) {
+  const bets = rules.bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ");
+  const when = rules.condition ? evaluateCondition(rules.condition, []).rule : rules.cadence === "after-loss" ? "previous round was a loss" : rules.cadence === "every-other" ? "every other round" : rules.cadence === "interval" ? `every ${rules.interval ?? 3} rounds` : "every round";
+  return { when, then: `bet ${rules.bets.map((b) => betFromId(b.betId)?.label).join(" + ")}`, size: `${rules.bets.reduce((s, b) => s + b.stake, 0)} chips${rules.maxBet ? ` (max ${rules.maxBet})` : ""}`, cadence: rules.cadence === "interval" ? `${rules.interval ?? 3} rounds` : rules.cadence.replace("-", " "), bets };
 }

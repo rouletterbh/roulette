@@ -7,6 +7,7 @@ import { demoTables, demoPlayers } from "@/lib/demo/data";
 import { getDemoAgents } from "@/lib/demo/agents";
 import { useEffect } from "react";
 import { track } from "@/lib/analytics/events";
+import { AgentNetworkHero } from "./agent-network-hero";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -18,7 +19,7 @@ export function Hero() {
   useEffect(() => track("landing_view"), []);
 
   return (
-    <section className="relative overflow-hidden">
+    <section className="relative overflow-hidden blueprint">
       <div className="container-edge relative z-10 flex flex-col items-center pt-16 text-center md:pt-24 lg:pt-28">
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease }}>
           <Eyebrow live>Live on Robinhood Chain</Eyebrow>
@@ -89,38 +90,14 @@ export function Hero() {
         </motion.dl>
       </div>
 
-      {/* Hero artwork: original OpenAI-generated renders, swapped by theme via CSS */}
+      {/* Live agent environment: the table is alive */}
       <motion.div
-        initial={{ opacity: 0, y: 40, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 1.2, delay: 0.3, ease }}
-        className="container-edge relative -mt-2 md:-mt-10 lg:-mt-16"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, delay: 0.35, ease }}
+        className="container-edge relative mt-12 md:mt-16"
       >
-        <div className="vignette relative mx-auto aspect-[3/2] w-full max-w-[1180px] overflow-hidden">
-          <picture className="block dark:hidden">
-            <source srcSet="/art/generated/hero-light.webp" type="image/webp" />
-            <img
-              src="/art/generated/hero-light.png"
-              alt="A black ceramic roulette wheel floating in a bright studio, surrounded by translucent chips, dice and glossy market shapes with acid-green highlights."
-              className="h-full w-full object-cover"
-              width={1536}
-              height={1024}
-              fetchPriority="high"
-            />
-          </picture>
-          <picture className="hidden dark:block">
-            <source srcSet="/art/generated/hero-dark.webp" type="image/webp" />
-            <img
-              src="/art/generated/hero-dark.png"
-              alt="A chrome and black roulette wheel glowing with soft acid-green light inside a near-black atmosphere, with translucent chips and dice drifting around it."
-              className="h-full w-full object-cover"
-              width={1536}
-              height={1024}
-            />
-          </picture>
-          {/* feathered edges so the render dissolves into the canvas */}
-          <div className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(to bottom, var(--canvas) 0%, transparent 18%, transparent 80%, var(--canvas) 100%), linear-gradient(to right, var(--canvas) 0%, transparent 12%, transparent 88%, var(--canvas) 100%)" }} />
-        </div>
+        <AgentNetworkHero />
       </motion.div>
     </section>
   );
