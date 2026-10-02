@@ -70,6 +70,9 @@ const randomnessAddress = requireAddress("RANDOMNESS_ADDRESS");
 const tableIds = (process.env.TABLE_IDS ?? "1").split(",").map((s) => Number(s.trim())).filter((n) => n > 0);
 const bettingMs = Number(process.env.BETTING_SECONDS ?? 20) * 1000;
 const gapMs = Number(process.env.ROUND_GAP_SECONDS ?? 3) * 1000;
+// After an empty (cancelled, no-bet) round the pause doubles each time up to IDLE_GAP_SECONDS, and resets the
+// moment a round has bets. An idle table otherwise burns ~3 transactions every BETTING_SECONDS + a few seconds.
+const idleGapMs = Number(process.env.IDLE_GAP_SECONDS ?? 60) * 1000;
 const emptyPolicy = (process.env.EMPTY_ROUND_POLICY ?? "cancel") as "cancel" | "settle";
 const maxRounds = Number(roundsArg ?? process.env.MAX_ROUNDS ?? 0);
 const pollMs = Number(process.env.POLL_MS ?? 1000);
@@ -515,13 +518,21 @@ async function runTable(tableId: number) {
     await driveRound(rec);
     played++;
   }
+  let emptyStreak = 0;
   while (!stopping && (maxRounds === 0 || played < maxRounds)) {
     const rec = await planRound(tableId);
     log("info", "round.planned", { roundId: rec.roundId, tableId, commitment: rec.commitment });
     await driveRound(rec);
     played++;
     if (dry) break;
-    if (gapMs > 0 && !stopping) await sleep(gapMs);
+    emptyStreak = rec.stage === "cancelled" ? emptyStreak + 1 : 0;
+    const wait = emptyStreak === 0 ? gapMs : Math.min(Math.max(gapMs, 1000) * 2 ** emptyStreak, Math.max(idleGapMs, gapMs));
+    if (emptyStreak > 0) {
+      tableStatus(tableId).stage = "idle";
+      publishStatus();
+      log("info", "table.idle", { tableId, emptyRounds: emptyStreak, nextRoundInMs: wait });
+    }
+    if (wait > 0 && !stopping) await sleep(wait);
   }
   tableStatus(tableId).stage = "idle";
   publishStatus();

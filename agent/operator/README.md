@@ -81,6 +81,7 @@ still runs its course), exit 0. Second SIGINT: exit immediately; state is on dis
 | `TABLE_IDS` | `1` | comma list; each must be active |
 | `BETTING_SECONDS` | `20` | betting window per round |
 | `ROUND_GAP_SECONDS` | `3` | pause between rounds on a table |
+| `IDLE_GAP_SECONDS` | `60` | cap on the pause after empty rounds (doubles per empty round from `ROUND_GAP_SECONDS`, resets on the first round with bets) |
 | `EMPTY_ROUND_POLICY` | `cancel` | `cancel` or `settle`, see above |
 | `MAX_ROUNDS` / `--rounds=N` | `0` (forever) | rounds per table, then exit |
 | `STATE_DIR` | `agent/operator/state` | where `rounds.json` / `status.json` live |
