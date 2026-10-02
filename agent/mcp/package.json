@@ -1,0 +1,22 @@
+{
+  "name": "@roulette/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing the agent-ready REST API of a social roulette club built on Robinhood Chain. Read, verify, quote and build unsigned transaction intents. Never signs.",
+  "type": "module",
+  "bin": { "roulette-mcp": "./src/index.ts" },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "smoke": "bun run scripts/smoke.ts",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

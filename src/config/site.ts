@@ -39,6 +39,7 @@ export const siteConfig = {
         { label: "Fairness", href: "/fairness" },
         { label: "Security", href: "/security" },
         { label: "Technology", href: "/technology" },
+        { label: "Developers", href: "/developers" },
       ],
     },
     {

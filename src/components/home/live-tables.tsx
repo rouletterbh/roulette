@@ -9,7 +9,7 @@ export function LiveTables() {
       <SectionHeader
         eyebrow="Live tables"
         title={<>Pull up a seat.</>}
-        description="Public tables share one wheel and one verified result. Limits are set by the treasury, never by a promise."
+        description="The wheel never closes. Public tables run around the clock, share one verified result per round, and take their limits from the treasury, never from a promise."
         action={<Button href="/tables" variant="outline">All tables</Button>}
       />
       <div className="no-scrollbar -mx-[clamp(1rem,4vw,3.5rem)] flex snap-x snap-mandatory gap-4 overflow-x-auto px-[clamp(1rem,4vw,3.5rem)] pb-4 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 xl:grid-cols-4">

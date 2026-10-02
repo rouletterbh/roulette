@@ -45,6 +45,8 @@ export interface GameState {
   init: (mode: GameMode, balance?: number) => void;
   selectChip: (v: number) => void;
   addBet: (betId: string) => void;
+  /** Replace the slip atomically (used by agent seats). Returns an error string or null. */
+  setBets: (bets: Record<string, number>) => string | null;
   removeBet: (betId: string) => void;
   undo: () => void;
   clear: () => void;
@@ -140,6 +142,20 @@ export const useGame = create<GameState>()((set, get) => ({
     }
     sfx.chip();
     set({ bets: next, history: [...s.history, { betId, delta: stake }], error: null, betsLocked: false });
+  },
+
+  setBets: (bets) => {
+    const s = get();
+    if (s.phase !== "betting") return "Betting is closed";
+    const placed = toPlaced(bets);
+    if (placed.some((b) => !betFromId(b.id))) return "Unknown bet";
+    const total = placed.reduce((a, b) => a + b.stake, 0);
+    if (total > s.balance) return "Insufficient chips";
+    const check = checkWager(s.treasury, placed);
+    if (!check.ok) return check.reason ?? "Table limit reached";
+    sfx.chip();
+    set({ bets: { ...bets }, history: Object.entries(bets).map(([betId, delta]) => ({ betId, delta })), error: null, betsLocked: false });
+    return null;
   },
 
   removeBet: (betId) => {

@@ -22,7 +22,7 @@ export function RewardsSection() {
           <Eyebrow className="mb-4 block">Rewards</Eyebrow>
           <h2 className="font-display text-display-md text-balance">One wheel. An entire market of rewards.</h2>
           <p className="mt-5 max-w-lg text-base leading-relaxed text-muted md:text-lg">
-            Wins land as a win balance. You choose how it settles: an ecosystem token on Robinhood Chain, or a supported Stock Token where available. Only assets the vault actually holds are ever offered.
+            Wins land as a win balance. You choose how it settles: an ecosystem token on Robinhood Chain, or a supported Stock Token where available. Claims settle any hour, any day. Only assets the vault actually holds are ever offered.
           </p>
           <div className="mt-8 flex gap-3">
             <Button href="/rewards" variant="primary">See rewards</Button>

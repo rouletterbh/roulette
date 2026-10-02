@@ -29,6 +29,7 @@ import { Badge, DemoBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatNumber, cn, shortAddress } from "@/lib/utils";
 import { RealMoneyGate } from "@/components/compliance/real-money-gate";
+import { AgentSeatPanel } from "@/components/agent/agent-seat-panel";
 
 export interface GameTableConfig {
   mode: GameMode;
@@ -238,6 +239,7 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
         <aside className="order-2 lg:order-3">
           <div className="flex flex-col gap-4 lg:sticky lg:top-24">
             <BetSlip bets={placed} totalWager={total} liability={liability} balance={g.balance} phase={g.phase} onPlace={g.placeBets} onRemove={g.removeBet} error={g.error} practice={practice} maxRoundExposure={safe.maxRoundExposure} locked={g.betsLocked} shared={shared} />
+            <AgentSeatPanel owner={practice ? "practice" : selfAddress} tableId={config.tableId ?? config.mode} balance={g.balance} shared={shared} practice={practice} />
             {shared ? (
               <>
                 <RecentWinners winners={live.recentWinners} className="rounded-2xl border border-border bg-surface p-5 dark:bg-elevated" />

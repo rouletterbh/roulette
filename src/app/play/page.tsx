@@ -11,6 +11,8 @@ const modes = [
   { href: "/tables", title: "Live table", body: "Join a public table. One wheel, one result, everyone watching.", tag: "Social" },
   { href: "/create", title: "Private table", body: "Open a room, set limits inside the system cap, share a link.", tag: "Host" },
   { href: "/play/practice", title: "Practice", body: "Free practice chips. No money, no rewards, same wheel.", tag: "Free" },
+  { href: "/play/quick#agent", title: "Agent seat", body: "Set rules, approve them, and let an agent play your seat with a hard stop-loss and time limit. Every decision is logged.", tag: "Beta" },
+  { href: "/developers", title: "Build an agent", body: "Agent-ready API and MCP tools: read tables, verify rounds, quote bets, build intents your wallet signs.", tag: "Developers" },
 ];
 
 export default function PlayPage() {
