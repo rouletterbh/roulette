@@ -57,6 +57,9 @@ const crypto = (symbol: string, name: string): RewardToken => ({
   liquidityStatus: "unverified",
 });
 
+// Contract addresses for CASHCAT / PONS / AI confirmed by the owner on 2026-10-03
+// (canonical contracts on the Robinhood Chain explorer). Claims remain disabled
+// until an oracle and vault inventory exist for each asset (`enabled`, `priceOracle`).
 // Logos: ETH from ethereum.org brand assets; CASHCAT / PONS / AI from the artwork
 // each token lists on the Robinhood Chain explorer (CoinGecko), fetched 2026-10-03.
 // Stock Tokens carry no logo: company marks are third-party trademarks and the
@@ -69,9 +72,9 @@ export const rewardRegistry: RewardToken[] = z.array(RewardTokenSchema).parse([
   stock("GOOGL", "Alphabet"),
   stock("MSFT", "Microsoft"),
   { ...crypto("ETH", "Ether"), logoURI: "/brand/tokens/ETH.svg" },
-  { ...crypto("CASHCAT", "Cash Cat"), logoURI: "/brand/tokens/CASHCAT.png", candidateAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4" },
-  { ...crypto("PONS", "Pons"), logoURI: "/brand/tokens/PONS.png", candidateAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571" },
-  { ...crypto("AI", "Artificial Inu"), logoURI: "/brand/tokens/AI.png", candidateAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18" },
+  { ...crypto("CASHCAT", "Cash Cat"), logoURI: "/brand/tokens/CASHCAT.png", contractAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", candidateAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4" },
+  { ...crypto("PONS", "Pons"), logoURI: "/brand/tokens/PONS.png", contractAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571", candidateAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571" },
+  { ...crypto("AI", "Artificial Inu"), logoURI: "/brand/tokens/AI.png", contractAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", candidateAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18" },
 ]);
 
 export const chipTokenIds = {
