@@ -17,6 +17,7 @@ export const meNav = [
   { label: "Overview", href: "/me" },
   { label: "Chips", href: "/me/chips" },
   { label: "Rewards", href: "/me/rewards" },
+  { label: "Collection", href: "/me/collection" },
   { label: "Game history", href: "/me/history" },
   { label: "Referrals", href: "/referrals" },
 ] as const;

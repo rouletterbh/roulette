@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useGame } from "@/store/game";
 import { useAgentSeats, decide, type AgentSeat } from "@/store/agent-seat";
+import { useCollection } from "@/store/collection";
 
 /**
  * Runs an approved agent seat against the game store. It only ever calls the
@@ -53,5 +54,8 @@ export function useAgentDriver(seat: AgentSeat | undefined, shared: boolean) {
     if (!s || s.lastRoundId !== lastRound.roundId) return;
     settledRef.current = lastRound.roundId;
     useAgentSeats.getState().recordResult(seatId, lastRound.roundId, lastRound.result, lastRound.settlement.netProfit);
+    if (lastRound.settlement.netProfit > 0 && s.owner !== "practice") {
+      useCollection.getState().acquire({ owner: s.owner, agentId: s.id, agentName: s.name, roundId: lastRound.roundId, result: lastRound.result, chips: lastRound.settlement.netProfit, rule: s.collection });
+    }
   }, [seatId, phase, lastRound]);
 }

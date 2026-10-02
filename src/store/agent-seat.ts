@@ -43,6 +43,10 @@ export interface AgentLogItem {
 export interface AgentSeat {
   id: string;
   name: string;
+  /** One-line public thesis. */
+  thesis: string;
+  /** Where wins settle: primary asset, fallback, else win balance. */
+  collection: { primaryAssetId: string | null; fallbackAssetId: string | null };
   owner: string;
   tableId: string;
   rules: AgentRules;
@@ -71,7 +75,7 @@ export const AGENT_CAPS = {
 
 interface AgentSeatState {
   seats: Record<string, AgentSeat>;
-  create: (input: { name: string; owner: string; tableId: string; rules: AgentRules; allowance: number; isPublic: boolean }) => { ok: true; id: string } | { ok: false; error: string };
+  create: (input: { name: string; thesis?: string; collection?: AgentSeat["collection"]; owner: string; tableId: string; rules: AgentRules; allowance: number; isPublic: boolean }) => { ok: true; id: string } | { ok: false; error: string };
   approve: (id: string) => void;
   pause: (id: string) => void;
   resume: (id: string) => void;
@@ -126,12 +130,12 @@ export const useAgentSeats = create<AgentSeatState>()(
   persist(
     (set, get) => ({
       seats: {},
-      create: ({ name, owner, tableId, rules, allowance, isPublic }) => {
+      create: ({ name, thesis = "", collection = { primaryAssetId: null, fallbackAssetId: null }, owner, tableId, rules, allowance, isPublic }) => {
         const err = validateRules(rules, allowance, Infinity);
         if (err) return { ok: false, error: err };
         const id = `agent-${lid()}`;
         const seat: AgentSeat = {
-          id, name: name.trim() || "Untitled agent", owner, tableId, rules, allowance, status: "pending-approval", isPublic,
+          id, name: name.trim() || "Untitled agent", thesis: thesis.trim().slice(0, 120), collection, owner, tableId, rules, allowance, status: "pending-approval", isPublic,
           createdAt: Date.now(), approvedAt: null, stoppedReason: null, roundsPlayed: 0, net: 0, lastRoundId: null, lastOutcomeWasLoss: false,
           log: [log("created", `Rules set: ${rules.bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ")} · ${rules.cadence} · stop-loss ${rules.stopLoss} · ${rules.maxRounds} rounds · ${rules.timeLimitMinutes} min`)],
           followers: 0,

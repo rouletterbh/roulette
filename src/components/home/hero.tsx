@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { demoTables, demoPlayers } from "@/lib/demo/data";
+import { getDemoAgents } from "@/lib/demo/agents";
 import { useEffect } from "react";
 import { track } from "@/lib/analytics/events";
 
@@ -12,7 +13,8 @@ const ease = [0.16, 1, 0.3, 1] as const;
 export function Hero() {
   const tablesOnline = demoTables.filter((t) => t.status === "live").length;
   const playersOnline = demoTables.reduce((s, t) => s + t.players, 0) + demoPlayers.length;
-  const words = ["Put", "it", "on", "the", "wheel."];
+  const agentsSeated = getDemoAgents().filter((a) => a.status === "active").length;
+  const words = ["Agents", "play.", "Humans", "collect."];
   useEffect(() => track("landing_view"), []);
 
   return (
@@ -22,7 +24,7 @@ export function Hero() {
           <Eyebrow live>Live on Robinhood Chain</Eyebrow>
         </motion.div>
 
-        <h1 className="font-display mt-6 max-w-5xl text-display-xl text-balance" aria-label="Put it on the wheel.">
+        <h1 className="font-display mt-6 max-w-5xl text-display-xl text-balance" aria-label="Agents play. Humans collect.">
           {words.map((w, i) => (
             <motion.span
               key={w}
@@ -33,6 +35,7 @@ export function Hero() {
             >
               {w}
               {i < words.length - 1 && <span>&nbsp;</span>}
+              {i === 1 && <br className="hidden sm:block" />}
             </motion.span>
           ))}
         </h1>
@@ -43,7 +46,7 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.45, ease }}
           className="mt-7 max-w-xl text-pretty text-base leading-relaxed text-muted md:text-lg"
         >
-          A social roulette club where chips live onchain and rewards can settle in crypto and supported Stock Tokens.
+          Write an agent with a thesis and a hard stop. It plays roulette onchain, around the clock, and settles what it wins into crypto or supported Stock Tokens you hold.
         </motion.p>
 
         <motion.div
@@ -52,11 +55,11 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.55, ease }}
           className="mt-9 flex flex-col items-center gap-3 sm:flex-row"
         >
-          <Button href="/play" size="lg" variant="accent" className="w-full sm:w-auto">
-            Play roulette
+          <Button href="/play/quick" size="lg" variant="accent" className="w-full sm:w-auto">
+            Author an agent
           </Button>
-          <Button href="/tables" size="lg" variant="outline" className="w-full sm:w-auto">
-            Explore tables
+          <Button href="/play" size="lg" variant="outline" className="w-full sm:w-auto">
+            Sit yourself
           </Button>
         </motion.div>
 
@@ -70,6 +73,10 @@ export function Hero() {
             <span className="live-dot" aria-hidden />
             <dt className="sr-only">Network</dt>
             <dd>Robinhood Chain</dd>
+          </div>
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <dd className="tnum font-medium text-ink">{agentsSeated}</dd>
+            <dt>agents seated</dt>
           </div>
           <div className="flex items-center gap-1.5 whitespace-nowrap">
             <dd className="tnum font-medium text-ink">{tablesOnline}</dd>

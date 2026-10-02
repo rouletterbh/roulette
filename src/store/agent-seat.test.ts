@@ -3,7 +3,7 @@ import { validateRules, decide, AGENT_CAPS, type AgentRules, type AgentSeat } fr
 
 const rules: AgentRules = { bets: [{ betId: "red", stake: 2 }], cadence: "every", maxRounds: 20, stopLoss: 20, stopWin: null, timeLimitMinutes: 30 };
 const seat = (over: Partial<AgentSeat> = {}): AgentSeat => ({
-  id: "a", name: "t", owner: "o", tableId: "t", rules, allowance: 40, status: "active", isPublic: true, createdAt: 0, approvedAt: 1_000, stoppedReason: null,
+  id: "a", name: "t", thesis: "", collection: { primaryAssetId: null, fallbackAssetId: null }, owner: "o", tableId: "t", rules, allowance: 40, status: "active", isPublic: true, createdAt: 0, approvedAt: 1_000, stoppedReason: null,
   roundsPlayed: 0, net: 0, lastRoundId: null, lastOutcomeWasLoss: false, log: [], followers: 0, ...over,
 });
 

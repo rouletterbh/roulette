@@ -1,0 +1,35 @@
+# Project handoff — paste this into any assistant to bring it up to speed
+
+**Project:** [PROJECT_NAME] (working name "Wheelhouse"; name is configurable via `NEXT_PUBLIC_PROJECT_NAME`). A social onchain roulette platform on **Robinhood Chain** (mainnet chain id 4663, testnet 46630, gas asset ETH). Independent product; no Robinhood affiliation may be implied. Approved terms: "Robinhood Chain", "Stock Tokens". Never: tokenized stocks/equities, "Hood Chain", promises of profit/returns/yield.
+
+**Repo:** github.com/rouletterbh/roulette (branch `main`), deployed on Vercel. Stack: Next.js 16 (App Router), React 19, Tailwind v4, motion, zustand, viem/wagmi, zod, Bun. Contracts: Solidity 0.8.26 + OpenZeppelin 5, Foundry. Tests: vitest (74) + forge (141), all passing. Demo mode is on (`NEXT_PUBLIC_DEMO_MODE=true`): wallet, balances, tables, treasury and league data are simulated and labeled DEMO.
+
+## Positioning (current)
+"Agents play. Humans collect." A person writes a rule-based agent (thesis, bets, cadence) with a mandatory leash (chip allowance, stop-loss, round cap, time limit). After an explicit approval step the agent plays their seat, logs every decision, and settles wins into assets the owner chooses (ecosystem tokens on Robinhood Chain, or Stock Tokens where the vault holds inventory and the jurisdiction is enabled). The wheel keeps 1/37 of every bet, so the product never claims agents earn; they play, and the "collection" is what the owner walked away with. A league ranks agents on discipline, collection diversity, followers and longest run, never on money lost or wagered.
+
+## Core guarantees
+- **Solvency:** every wager is accepted only if its worst-case payout across all 37 outcomes fits under `availableBankroll × maxRoundExposureBps`, where `availableBankroll = bankroll − reserved − claimable − protocolReserve − safetyReserve`. Founders fund ~$100 and never top up; limits grow automatically with treasury. Implemented in `src/lib/risk/engine.ts` and `contracts/src/RiskEngine.sol` + `CasinoTreasury.sol`.
+- **Fairness:** commit–reveal. `result = keccak256(serverSeed ‖ playerSeed ‖ blockRef ‖ roundId) mod 37`; commitment published before bets open; wheel animation only replays the result. Verifier at `/fairness` and `POST /api/v1/verify`.
+- **Chips:** ERC-1155 (ids 1001/1005/1010/1025/1050/1100 = 1/5/10/25/50/100 units). Internal escrow at tables; chips minted for the payout-liquidity share of a deposit only (default 70%).
+- **Compliance:** 18+/terms gate, responsible-play tools (reminder, cooldown, self-exclusion, deposit/loss/time limits, lock) wrap every real-money route; agents inherit them. No jurisdiction is enabled for real money yet (`src/config/jurisdictions.ts`). Legal pages carry `[LEGAL COUNSEL REVIEW REQUIRED]` placeholders. Contracts are NOT YET AUDITED and not deployed.
+
+## What exists (routes)
+Home `/`, `/play` (quick, live, private, practice, agent seat, developers), `/play/practice`, `/play/quick`, `/tables`, `/table/[id]` (timer-driven shared rounds, simulated seat-mates, chat, emotes, mute/block/report), `/create`, `/explore`, `/agents` (league + your stable), `/agent/[id]` (thesis, leash, collection, activity, follow, copy thesis), `/me` (+ `/chips`, `/rewards`, `/collection`, `/history`), `/cashier` (deposit/chips/claim/withdraw with 7-state tx modal), `/rewards`, `/treasury`, `/fairness`, `/leaderboard`, `/player/[wallet]`, `/referrals`, `/developers`, `/tournaments` (disabled), legal cluster (`/legal`, `/terms`, `/privacy`, `/cookies`, `/risk-disclosure`, `/stock-token-disclosure`, `/restricted-jurisdictions`, `/aml`, `/responsible-play`), `/about`, `/how-it-works`, `/technology`, `/security`, `/faq`, unlisted `/admin`.
+
+## Agent-ready interface
+REST `/api/v1/*` (health, tables, treasury, limits, rewards, rounds, stats, verify, quote, unsigned tx intents for enter-table / place-bets / leave-table / claim), OpenAPI 3.1 at `/api/v1/openapi.json`, dataset catalog at `/api/v1/datasets`. MCP server in `agent/mcp` (15 tools over stdio). The API never signs; it returns intents for the agent's wallet. Contract addresses come from `NEXT_PUBLIC_*_ADDRESS` env; until set, intents return `CONTRACTS_NOT_DEPLOYED` with a preview.
+
+## Contracts (`contracts/`)
+AccessController (roles, two-step admin), EmergencyPause (per-contract flags), Chip1155, CasinoTreasury (deposit split, bankroll accounting, reserve/release/settle, pull-payment withdraw), RiskEngine (pure checks), RandomnessManager (commit → lock → reveal with future blockhash; void + refund on expiry; VRF adapter interface), RouletteGame (tables, rounds, internal escrow, settlement; no admin can alter outcomes or move escrow), RewardVault (registry, oracle freshness, slippage, deadline, pull claims), PlayerRegistry. `script/Deploy.s.sol` verified on Anvil. Mainnet deployment guide is in the chat history / `docs/DEPLOYMENT.md`; EVM target is Cancun (OZ 5.6 requirement).
+
+## Open decisions
+- Product name (candidates discussed: Pocket, Thirty-Seven, Croupier, Spindle; "Roblette" rejected for implying Robinhood and reading as robbery).
+- Chip price for mainnet (recommend ≈ $0.10/unit so a $100 bankroll allows straight-up bets).
+- Mainnet vs testnet-first (founder wants mainnet; nothing has run on testnet; unaudited).
+- Still to build for real-money play: frontend contract read/write hooks (game store simulates rounds when demo mode is off) and the operator service that runs commit/open/close/reveal/settle.
+
+## Recent changes (this session)
+1. Full MVP built: design system, homepage with original OpenAI-generated art, deterministic wheel, boards, bet slip, practice/quick/live/private tables, treasury/rewards/fairness/cashier, profiles/leaderboard/account/referrals/admin, legal cluster, compliance gates, contracts + tests, Prisma schema, docs.
+2. Foundry suite fixed and green (141); deploy script dry-run on Anvil.
+3. Agent-ready API + MCP + developer page; agent seats with approvals and logs; public agent profiles.
+4. Pillars "Collect" and "League": collection rules + `/me/collection` portfolio with provenance; `/agents` league with stable/follow/copy-thesis; agent builder shows expected loss and a collection rule; homepage reframed to "Agents play. Humans collect."; "Agents" added to primary nav.

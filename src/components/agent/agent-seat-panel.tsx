@@ -10,6 +10,8 @@ import { OUTSIDE_BETS, straight, betFromId } from "@/lib/roulette/bets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, formatNumber } from "@/lib/utils";
+import { getRewardInventory } from "@/lib/demo/rewards";
+import { useStable } from "@/store/stable";
 
 const QUICK_BETS = ["red", "black", "odd", "even", "low", "high", "dozen:1", "dozen:2", "dozen:3", "column:1", "column:2", "column:3"];
 
@@ -101,23 +103,31 @@ export function AgentSeatPanel({ owner, tableId, balance, shared, practice, clas
 
 function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: { owner: string; tableId: string; balance: number; practice?: boolean; onDone: () => void; onCancel: () => void }) {
   const create = useAgentSeats((s) => s.create);
-  const [name, setName] = useState("");
-  const [betId, setBetId] = useState("red");
-  const [straightN, setStraightN] = useState(17);
-  const [stake, setStake] = useState(1);
-  const [cadence, setCadence] = useState<AgentCadence>("every");
+  const draft = useStable((s) => s.draft);
+  const setDraft = useStable((s) => s.setDraft);
+  const inv = getRewardInventory();
+  const draftIsStraight = !!draft && draft.betId.startsWith("straight:");
+  const [name, setName] = useState(draft?.name ?? "");
+  const [thesis, setThesis] = useState("");
+  const [betId, setBetId] = useState(draft ? (draftIsStraight ? "straight" : draft.betId) : "red");
+  const [straightN, setStraightN] = useState(draftIsStraight ? Number(draft!.betId.split(":")[1]) : 17);
+  const [stake, setStake] = useState(draft?.stake ?? 1);
+  const [cadence, setCadence] = useState<AgentCadence>((draft?.cadence as AgentCadence) ?? "every");
   const defaultAllowance = Math.max(1, Math.floor(balance * 0.2));
   const [allowance, setAllowance] = useState(defaultAllowance);
-  const [stopLoss, setStopLoss] = useState(Math.max(1, Math.floor(defaultAllowance / 2)));
-  const [stopWin, setStopWin] = useState<number | "">("");
-  const [maxRounds, setMaxRounds] = useState(20);
-  const [timeLimit, setTimeLimit] = useState(30);
+  const [stopLoss, setStopLoss] = useState(Math.min(defaultAllowance, draft?.stopLoss ?? Math.max(1, Math.floor(defaultAllowance / 2))));
+  const [stopWin, setStopWin] = useState<number | "">(draft?.stopWin ?? "");
+  const [maxRounds, setMaxRounds] = useState(draft?.maxRounds ?? 20);
+  const [timeLimit, setTimeLimit] = useState(draft?.timeLimitMinutes ?? 30);
+  const [primaryAsset, setPrimaryAsset] = useState<string>(inv.find((i) => i.status === "available")?.token.id ?? "");
+  const [fallbackAsset, setFallbackAsset] = useState<string>("");
   const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const resolvedBet = betId === "straight" ? straight(straightN).id : betId;
   const rules: AgentRules = { bets: [{ betId: resolvedBet, stake }], cadence, maxRounds, stopLoss, stopWin: stopWin === "" ? null : Number(stopWin), timeLimitMinutes: timeLimit };
   const liveError = validateRules(rules, allowance, balance);
+  const expectedLoss = (stake * maxRounds * 1) / 37;
 
   const field = "h-9 w-full rounded-lg border border-border bg-transparent px-3 text-[13px] tnum outline-none focus:border-ink";
   const label = "eyebrow mb-1 block text-[10px]";
@@ -126,6 +136,8 @@ function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: {
     <div className="text-[13px]">
       <label className={label} htmlFor="ag-name">Name</label>
       <input id="ag-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Steady red" className={cn(field, "mb-3")} maxLength={24} />
+      <label className={label} htmlFor="ag-thesis">Thesis (public, one line)</label>
+      <input id="ag-thesis" value={thesis} onChange={(e) => setThesis(e.target.value)} placeholder="Small outside bets, walk away on schedule." className={cn(field, "mb-3")} maxLength={120} />
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={label} htmlFor="ag-bet">Bet</label>
@@ -149,6 +161,27 @@ function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: {
         <div><label className={label} htmlFor="ag-rounds">Max rounds (≤ {AGENT_CAPS.maxRounds})</label><input id="ag-rounds" type="number" min={1} max={AGENT_CAPS.maxRounds} value={maxRounds} onChange={(e) => setMaxRounds(Number(e.target.value))} className={field} /></div>
         <div><label className={label} htmlFor="ag-time">Time limit, min (≤ {AGENT_CAPS.maxTimeMinutes})</label><input id="ag-time" type="number" min={1} max={AGENT_CAPS.maxTimeMinutes} value={timeLimit} onChange={(e) => setTimeLimit(Number(e.target.value))} className={field} /></div>
       </div>
+      {!practice && (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <label className={label} htmlFor="ag-collect">Collect wins as</label>
+            <select id="ag-collect" value={primaryAsset} onChange={(e) => setPrimaryAsset(e.target.value)} className={field}>
+              <option value="">Win balance (choose later)</option>
+              {inv.map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={label} htmlFor="ag-fallback">Fallback</label>
+            <select id="ag-fallback" value={fallbackAsset} onChange={(e) => setFallbackAsset(e.target.value)} className={field}>
+              <option value="">Win balance</option>
+              {inv.filter((i) => i.token.id !== primaryAsset).map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+      <p className="mt-3 rounded-lg bg-sunken px-3 py-2 text-[12px] text-muted dark:bg-surface">
+        The wheel keeps 1/37 of every chip bet. At {stake} per round for {maxRounds} rounds the agent is expected to lose about <span className="tnum text-ink">{formatNumber(expectedLoss, { maximumFractionDigits: 1 })} chips</span>. Agents play; they don&apos;t earn.
+      </p>
       <label className="mt-3 flex items-center gap-2 text-[12.5px]">
         <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--ink)]" />
         Public profile: others can follow this agent and read its rules and log
@@ -158,7 +191,7 @@ function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: {
       </p>
       {error && <p className="mt-2 text-[12px] text-casino-red" role="alert">{error}</p>}
       <div className="mt-4 flex gap-2">
-        <Button size="sm" className="flex-1" disabled={!!liveError} onClick={() => { const r = create({ name, owner, tableId, rules, allowance, isPublic }); if (!r.ok) setError(r.error); else onDone(); }}>Review</Button>
+        <Button size="sm" className="flex-1" disabled={!!liveError} onClick={() => { const r = create({ name, thesis, collection: { primaryAssetId: primaryAsset || null, fallbackAssetId: fallbackAsset || null }, owner, tableId, rules, allowance, isPublic }); if (!r.ok) setError(r.error); else { setDraft(null); onDone(); } }}>Review</Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
