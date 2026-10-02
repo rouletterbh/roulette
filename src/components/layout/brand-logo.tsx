@@ -4,19 +4,21 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Official Robinhood Chain logo slot. Renders the supplied file from
- * /public/brand when present; otherwise a plain wordmark. Never generated.
+ * Official Robinhood Chain mark (public/brand, supplied asset, never redrawn)
+ * beside the network name. Light theme uses the dark-fill mark and vice versa.
+ * Falls back to the plain name if the file is missing.
  */
 export function RobinhoodChainLogo({ height = 16, className, withText = true }: { height?: number; className?: string; withText?: boolean }) {
   const [missing, setMissing] = useState(false);
-  if (missing) return withText ? <span className={cn("whitespace-nowrap font-medium", className)}>Robinhood Chain</span> : null;
   return (
-    <span className={cn("inline-flex items-center", className)}>
-      <picture>
-        <source srcSet="/brand/robinhood-chain-dark.svg" media="(prefers-color-scheme: dark)" />
-        <img src="/brand/robinhood-chain.svg" alt="Robinhood Chain" style={{ height, width: "auto" }} onError={() => setMissing(true)} className="dark:hidden" />
-      </picture>
-      <img src="/brand/robinhood-chain-dark.svg" alt="Robinhood Chain" style={{ height, width: "auto" }} onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/brand/robinhood-chain.svg"; }} className="hidden dark:block" />
+    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap", className)}>
+      {!missing && (
+        <>
+          <img src="/brand/robinhood-chain.svg" alt="" aria-hidden style={{ height, width: "auto" }} onError={() => setMissing(true)} className="dark:hidden" draggable={false} />
+          <img src="/brand/robinhood-chain-dark.svg" alt="" aria-hidden style={{ height, width: "auto" }} onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/brand/robinhood-chain.svg"; }} className="hidden dark:block" draggable={false} />
+        </>
+      )}
+      {(withText || missing) && <span className="font-medium">Robinhood Chain</span>}
     </span>
   );
 }

@@ -7,3 +7,6 @@ Drop OFFICIAL assets here. Nothing in this folder is generated or redrawn.
 - `tokens/<SYMBOL>.svg` — official token/issuer logos, e.g. `tokens/CASHCAT.svg`, `tokens/NVDA.svg`
 
 Slots render a text/monogram fallback until the file exists. Also set `logoURI` in `src/config/tokens.ts` to `/brand/tokens/<SYMBOL>.svg` to enable a token logo.
+
+## Provenance
+- `robinhood-chain.svg` / `robinhood-chain-dark.svg`: the official Robinhood feather mark as served by Robinhood's CDN for the Robinhood Chain documentation site (`cdn.robinhood.com/assets/generated_assets/hoodchain_docsite/feather-{dark,light}.svg`), fetched 2026-10-03 with the owner's stated permission from Robinhood Chain. The mark is used only beside the words "Robinhood Chain" to identify the network; never stylized or recolored.
