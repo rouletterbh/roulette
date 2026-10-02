@@ -1,0 +1,13 @@
+{
+  "name": "roulette-contracts",
+  "private": true,
+  "type": "module",
+  "description": "Smart-contract layer for the onchain social roulette platform on Robinhood Chain (Foundry project; solc-js compile check included).",
+  "scripts": {
+    "compile-check": "bun compile-check.mjs"
+  },
+  "devDependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "solc": "^0.8.26"
+  }
+}

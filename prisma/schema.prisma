@@ -1,0 +1,144 @@
+// Offchain INDEXED data only. The chain is authoritative for custody, deposits,
+// withdrawals, wagers, settlements, claims and chip supply. This database holds
+// profiles, social graph, chat, leaderboards, analytics and notifications.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  wallet        String   @id @db.VarChar(42)
+  displayName   String?  @db.VarChar(32)
+  avatarSeed    String?
+  joinedAt      DateTime @default(now())
+  referralCode  String?  @unique
+  referredBy    String?  @db.VarChar(42)
+  countryCode   String?  @db.VarChar(2)
+  ageConfirmed  Boolean  @default(false)
+  termsVersion  String?
+  selfExcludedUntil DateTime?
+  follows       Follow[] @relation("follower")
+  followers     Follow[] @relation("followee")
+  achievements  PlayerAchievement[]
+  messages      ChatMessage[]
+  rounds        IndexedBet[]
+}
+
+model Follow {
+  followerWallet String @db.VarChar(42)
+  followeeWallet String @db.VarChar(42)
+  createdAt      DateTime @default(now())
+  follower       Profile @relation("follower", fields: [followerWallet], references: [wallet])
+  followee       Profile @relation("followee", fields: [followeeWallet], references: [wallet])
+  @@id([followerWallet, followeeWallet])
+}
+
+model Table {
+  id          String   @id
+  name        String
+  visibility  String   // public | private
+  inviteCode  String   @unique
+  hostWallet  String   @db.VarChar(42)
+  minBet      Int
+  maxBet      Int
+  seats       Int
+  speed       String   // relaxed | standard | fast
+  createdAt   DateTime @default(now())
+  closedAt    DateTime?
+  rounds      IndexedRound[]
+  messages    ChatMessage[]
+}
+
+/// Mirror of onchain RoundSettled events for fast history queries. Never the source of truth.
+model IndexedRound {
+  id            String   @id // `${chainId}:${roundId}`
+  chainId       Int
+  roundId       BigInt
+  tableId       String?
+  table         Table?   @relation(fields: [tableId], references: [id])
+  commitment    String
+  serverSeed    String?
+  playerSeed    String?
+  blockRef      String?
+  result        Int?
+  txHash        String?
+  settledAt     DateTime?
+  bets          IndexedBet[]
+  @@index([tableId, settledAt])
+}
+
+model IndexedBet {
+  id        String  @id
+  roundId   String
+  round     IndexedRound @relation(fields: [roundId], references: [id])
+  wallet    String  @db.VarChar(42)
+  player    Profile @relation(fields: [wallet], references: [wallet])
+  betId     String  // e.g. straight:17
+  stake     Decimal @db.Decimal(38, 18)
+  returned  Decimal @db.Decimal(38, 18)
+  @@index([wallet])
+}
+
+model ChatMessage {
+  id        BigInt   @id @default(autoincrement())
+  tableId   String
+  table     Table    @relation(fields: [tableId], references: [id])
+  wallet    String   @db.VarChar(42)
+  author    Profile  @relation(fields: [wallet], references: [wallet])
+  body      String   @db.VarChar(140)
+  kind      String   @default("chat") // chat | reaction
+  createdAt DateTime @default(now())
+  hidden    Boolean  @default(false)
+  @@index([tableId, createdAt])
+}
+
+model Achievement {
+  id          String @id
+  name        String
+  description String
+  rarity      String
+  players     PlayerAchievement[]
+}
+
+model PlayerAchievement {
+  wallet        String @db.VarChar(42)
+  achievementId String
+  earnedAt      DateTime @default(now())
+  player        Profile @relation(fields: [wallet], references: [wallet])
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  @@id([wallet, achievementId])
+}
+
+model LeaderboardSnapshot {
+  id        BigInt   @id @default(autoincrement())
+  period    String   // today | week | all
+  category  String   // biggest-win | most-games | longest-streak
+  wallet    String   @db.VarChar(42)
+  value     Decimal  @db.Decimal(38, 18)
+  rank      Int
+  computedAt DateTime @default(now())
+  @@index([period, category, rank])
+}
+
+model Report {
+  id          BigInt   @id @default(autoincrement())
+  reporter    String   @db.VarChar(42)
+  reported    String   @db.VarChar(42)
+  reason      String?
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+}
+
+model AnalyticsEvent {
+  id        BigInt   @id @default(autoincrement())
+  event     String
+  props     Json?
+  path      String?
+  createdAt DateTime @default(now())
+  @@index([event, createdAt])
+}
