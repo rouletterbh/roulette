@@ -248,6 +248,18 @@ const R = { None: 0, Committed: 1, Locked: 2, Revealed: 3, Void: 4 } as const;
 interface GameRound { tableId: number; status: number; result: number; betCount: number; openedAt: bigint; totalStaked: bigint; totalReturned: bigint; reservedUnits: bigint; playerSeed: Hex }
 interface RmRound { commitment: Hex; playerSeed: Hex; serverSeed: Hex; blockRef: Hex; revealAfterBlock: bigint; committedAtBlock: bigint; result: number; status: number }
 
+/**
+ * The block number AS THE CONTRACTS SEE IT. On Arbitrum-style chains (Robinhood Chain is one) `block.number`
+ * inside a contract is the Ethereum L1 block number and `blockhash` works on that numbering, while
+ * `eth_blockNumber` returns the L2 height. The RPC's block object carries `l1BlockNumber` on such chains;
+ * elsewhere (Anvil, plain EVM) it is absent and the L2/L1 numbers are the same thing.
+ */
+async function contractBlockNumber(): Promise<bigint> {
+  const b = (await pub.request({ method: "eth_getBlockByNumber", params: ["latest", false] })) as { number: Hex; l1BlockNumber?: Hex } | null;
+  if (!b) throw new Error("eth_getBlockByNumber(latest) returned null");
+  return hexToBigInt(b.l1BlockNumber ?? b.number);
+}
+
 const gameRound = (id: bigint) => pub.readContract({ address: gameAddress, abi: gameAbi, functionName: "getRound", args: [id] }) as Promise<GameRound>;
 const rmRound = (id: bigint) => pub.readContract({ address: randomnessAddress, abi: randomnessAbi, functionName: "getRound", args: [id] }) as Promise<RmRound>;
 
@@ -537,7 +549,7 @@ async function step(rec: RoundRecord): Promise<boolean> {
   if (g.status === G.Closed) {
     if (rm.status === R.Locked) {
       const target = rm.revealAfterBlock;
-      const bn = await pub.getBlockNumber();
+      const bn = await contractBlockNumber();
       if (bn > target + BLOCKHASH_WINDOW) {
         // blockhash(revealAfterBlock) is gone: reveal would void anyway; voidRound = markVoid + refund in one tx
         await settlePending(rec, "void");
