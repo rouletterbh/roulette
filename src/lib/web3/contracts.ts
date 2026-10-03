@@ -145,7 +145,8 @@ export function resolveChainTableId(tableId?: string | null): number {
 }
 
 /** Blocks scanned backwards for the latest RoundOpened on mount. */
-export const ROUND_SCAN_BLOCKS = BigInt(process.env.NEXT_PUBLIC_ROUND_SCAN_BLOCKS ?? "5000");
+/** Robinhood Chain mints ~10 blocks/s, so 60 000 blocks ≈ 100 minutes of history for the initial log scans. */
+export const ROUND_SCAN_BLOCKS = BigInt(process.env.NEXT_PUBLIC_ROUND_SCAN_BLOCKS ?? "60000");
 /** Read-polling cadence (ms) for chain state when not in demo mode. */
 export const CHAIN_POLL_MS = 4000;
 /** The operator's betting window (not on chain); used only for an approximate countdown. */
