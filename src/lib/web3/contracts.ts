@@ -148,6 +148,8 @@ export function resolveChainTableId(tableId?: string | null): number {
 export const ROUND_SCAN_BLOCKS = BigInt(process.env.NEXT_PUBLIC_ROUND_SCAN_BLOCKS ?? "5000");
 /** Read-polling cadence (ms) for chain state when not in demo mode. */
 export const CHAIN_POLL_MS = 4000;
+/** The operator's betting window (not on chain); used only for an approximate countdown. */
+export const BETTING_WINDOW_SECONDS = Number(process.env.NEXT_PUBLIC_BETTING_SECONDS ?? "45");
 
 export const ROUND_STATUS = { None: 0, Open: 1, Closed: 2, Settled: 3, Voided: 4 } as const;
 export type ChainRoundStatus = (typeof ROUND_STATUS)[keyof typeof ROUND_STATUS];

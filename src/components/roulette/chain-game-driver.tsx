@@ -12,7 +12,7 @@ import { useChipApproval, useChipBalances, useCurrentRound, useEscrow, useRandom
 import { enterTableUnits, leaveTable as leaveTableTx, placeBets as placeBetsTx } from "@/lib/web3/actions";
 import { useTxFlow } from "@/lib/web3/use-tx-flow";
 import { buildChainCommitment, buildChainReveal, chainStatusLabel, planChainSync } from "@/lib/web3/round-sync";
-import { PAUSE_FLAGS, ROUND_STATUS, contractAddresses, gameContractsReady, resolveChainTableId } from "@/lib/web3/contracts";
+import { BETTING_WINDOW_SECONDS, PAUSE_FLAGS, ROUND_STATUS, contractAddresses, gameContractsReady, resolveChainTableId } from "@/lib/web3/contracts";
 import { TransactionModal } from "@/components/cashier/transaction-modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,18 @@ const toPlaced = (bets: Record<string, number>): PlacedBet[] =>
       return def ? [{ ...def, stake }] : [];
     });
 
+/** Seconds until the operator is expected to close bets (approximate: the window is not on chain). */
+function useBetsCloseIn(openedAt: number, open: boolean): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!open || !openedAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [open, openedAt]);
+  if (!open || !openedAt) return null;
+  return Math.max(0, Math.round(openedAt + BETTING_WINDOW_SECONDS - now / 1000));
+}
+
 export function ChainGameDriver({ config }: { config: GameTableConfig }) {
   const router = useRouter();
   const address = useWallet((s) => s.address);
@@ -59,6 +71,7 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
   const ready = gameContractsReady();
   const gameplayPaused = (treasury.pauseFlags & PAUSE_FLAGS.gameplay) !== 0;
   const escrowUnits = escrow.units;
+  const closeIn = useBetsCloseIn(round.openedAt, round.status === ROUND_STATUS.Open);
 
   // Latest values for the imperative handlers registered on the bridge store.
   const latest = useRef({ round, escrow, chips, approval, treasury, flow, gameplayPaused });
@@ -246,6 +259,11 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
             {round.roundId != null && (
               <span className="tnum text-muted">
                 · round #{round.roundId.toString()} · {round.betCount} {round.betCount === 1 ? "bet" : "bets"}
+              </span>
+            )}
+            {closeIn != null && (
+              <span className="tnum text-muted" aria-live="polite">
+                · bets close in about {closeIn}s
               </span>
             )}
             {gameplayPaused && <Badge tone="red">Gameplay paused</Badge>}

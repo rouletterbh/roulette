@@ -18,9 +18,11 @@
  * record is persisted BEFORE the commit transaction is sent, so a crash at any point resumes cleanly.
  *
  * Env: RPC_URL, CHAIN_ID (4663|46630|31337), GAME_ADDRESS, RANDOMNESS_ADDRESS, OPERATOR_PRIVATE_KEY (optional with --dry-run)
- * Optional: TABLE_IDS ("1"), BETTING_SECONDS (20), ROUND_GAP_SECONDS (3), EMPTY_ROUND_POLICY (cancel|settle),
- *           MAX_ROUNDS (0 = forever; also --rounds=N), ACL_ADDRESS (default: game.ACL()), STATE_DIR (./state),
- *           POLL_MS (1000), TX_TIMEOUT_MS (120000), MAX_BACKOFF_MS (30000)
+ * Optional: TABLE_IDS ("1"), BETTING_SECONDS (45), ROUND_GAP_SECONDS (3), IDLE_GAP_SECONDS (60), EMPTY_ROUND_POLICY (cancel|settle),
+ *           SEATED_ONLY (true: open rounds only while at least one player has chips in escrow; otherwise just watch),
+ *           SEAT_POLL_MS (5000), SCAN_FROM_BLOCK (first block to scan EscrowDeposited from; default: latest-50000),
+ *           SCAN_CHUNK_BLOCKS (5000), MAX_ROUNDS (0 = forever; also --rounds=N), ACL_ADDRESS (default: game.ACL()),
+ *           STATE_DIR (./state), POLL_MS (1000), TX_TIMEOUT_MS (120000), MAX_BACKOFF_MS (30000)
  * Flags: --dry-run (verify config + roles, print the plan, send nothing), --rounds=N
  *
  * Safety: never sends when --dry-run; fails fast when the key lacks OPERATOR_ROLE, when CHAIN_ID does not match
@@ -34,11 +36,13 @@ import {
   createWalletClient,
   defineChain,
   concatHex,
+  getAbiItem,
   hexToBigInt,
   http,
   keccak256,
   toHex,
   type Abi,
+  type AbiEvent,
   type Address,
   type Hex,
 } from "viem";
@@ -68,11 +72,16 @@ const chain = defineChain({
 const gameAddress = requireAddress("GAME_ADDRESS");
 const randomnessAddress = requireAddress("RANDOMNESS_ADDRESS");
 const tableIds = (process.env.TABLE_IDS ?? "1").split(",").map((s) => Number(s.trim())).filter((n) => n > 0);
-const bettingMs = Number(process.env.BETTING_SECONDS ?? 20) * 1000;
+const bettingMs = Number(process.env.BETTING_SECONDS ?? 45) * 1000;
 const gapMs = Number(process.env.ROUND_GAP_SECONDS ?? 3) * 1000;
 // After an empty (cancelled, no-bet) round the pause doubles each time up to IDLE_GAP_SECONDS, and resets the
 // moment a round has bets. An idle table otherwise burns ~3 transactions every BETTING_SECONDS + a few seconds.
 const idleGapMs = Number(process.env.IDLE_GAP_SECONDS ?? 60) * 1000;
+// Seated-only: a round costs three transactions, so none is opened while nobody has chips in escrow.
+const seatedOnly = (process.env.SEATED_ONLY ?? "true") !== "false";
+const seatPollMs = Number(process.env.SEAT_POLL_MS ?? 5000);
+const scanFromBlock = process.env.SCAN_FROM_BLOCK ? BigInt(process.env.SCAN_FROM_BLOCK) : null;
+const scanChunk = BigInt(process.env.SCAN_CHUNK_BLOCKS ?? 5000);
 const emptyPolicy = (process.env.EMPTY_ROUND_POLICY ?? "cancel") as "cancel" | "settle";
 const maxRounds = Number(roundsArg ?? process.env.MAX_ROUNDS ?? 0);
 const pollMs = Number(process.env.POLL_MS ?? 1000);
@@ -81,6 +90,7 @@ const maxBackoffMs = Number(process.env.MAX_BACKOFF_MS ?? 30_000);
 const stateDir = resolve(process.env.STATE_DIR ?? join(import.meta.dir, "..", "state"));
 const roundsFile = join(stateDir, "rounds.json");
 const statusFile = join(stateDir, "status.json");
+const seatsFile = join(stateDir, "seats.json");
 const BLOCKHASH_WINDOW = 256n;
 const PAUSE_GAMEPLAY = 2;
 
@@ -146,6 +156,9 @@ interface Status {
   randomness: Address;
   bettingSeconds: number;
   emptyRoundPolicy: string;
+  seatedOnly: boolean;
+  /** Players with chips in escrow at the last seat refresh. */
+  seated: number;
   stopping: boolean;
   tables: Record<string, TableStatus>;
   recent: Array<{ roundId: string; tableId: number; result: number | null; stage: Stage; at: string }>;
@@ -181,6 +194,8 @@ const status: Status = {
   randomness: randomnessAddress,
   bettingSeconds: bettingMs / 1000,
   emptyRoundPolicy: emptyPolicy,
+  seatedOnly,
+  seated: 0,
   stopping: false,
   tables: {},
   recent: [],
@@ -235,6 +250,76 @@ interface RmRound { commitment: Hex; playerSeed: Hex; serverSeed: Hex; blockRef:
 
 const gameRound = (id: bigint) => pub.readContract({ address: gameAddress, abi: gameAbi, functionName: "getRound", args: [id] }) as Promise<GameRound>;
 const rmRound = (id: bigint) => pub.readContract({ address: randomnessAddress, abi: randomnessAbi, functionName: "getRound", args: [id] }) as Promise<RmRound>;
+
+// --------------------------------------------------------------------- seats
+// Who is seated = who has chips in escrow. Candidates come from EscrowDeposited logs (scanned incrementally and
+// persisted), then every candidate's `escrow(player)` is re-read so leaves and settlements are reflected. A player
+// who entered before SCAN_FROM_BLOCK is picked up the next time they deposit into escrow.
+
+interface Seats { version: 1; lastScannedBlock: string | null; players: Address[] }
+function loadSeats(): Seats {
+  if (!existsSync(seatsFile)) return { version: 1, lastScannedBlock: null, players: [] };
+  const s = JSON.parse(readFileSync(seatsFile, "utf8")) as Seats;
+  return s.version === 1 ? s : { version: 1, lastScannedBlock: null, players: [] };
+}
+const seats = loadSeats();
+const escrowDepositedEvent = getAbiItem({ abi: gameAbi, name: "EscrowDeposited" }) as AbiEvent;
+
+async function refreshSeats(): Promise<Address[]> {
+  const latest = await pub.getBlockNumber();
+  let from: bigint;
+  if (seats.lastScannedBlock != null) from = BigInt(seats.lastScannedBlock) + 1n;
+  else {
+    from = scanFromBlock ?? (latest > 50_000n ? latest - 50_000n : 0n);
+    if (scanFromBlock == null) log("warn", "seats.scanWindow", { fromBlock: from, note: "SCAN_FROM_BLOCK unset: players who entered earlier are only seen when they deposit again" });
+  }
+  const known = new Set(seats.players.map((a) => a.toLowerCase() as Address));
+  while (from <= latest) {
+    const to = from + scanChunk - 1n < latest ? from + scanChunk - 1n : latest;
+    const logs = await pub.getLogs({ address: gameAddress, event: escrowDepositedEvent, fromBlock: from, toBlock: to });
+    for (const l of logs) {
+      const player = (l.args as { player?: Address }).player;
+      if (player) known.add(player.toLowerCase() as Address);
+    }
+    from = to + 1n;
+  }
+  const seated: Address[] = [];
+  for (const player of known) {
+    const bal = (await pub.readContract({ address: gameAddress, abi: gameAbi, functionName: "escrow", args: [player] })) as bigint;
+    if (bal > 0n) seated.push(player);
+  }
+  seats.players = seated;
+  seats.lastScannedBlock = latest.toString();
+  if (!dry) atomicWrite(seatsFile, json(seats));
+  status.seated = seated.length;
+  return seated;
+}
+
+/** Blocks until at least one player is seated (or shutdown). No transaction is sent while waiting. */
+async function waitForPlayers(tableId: number): Promise<boolean> {
+  let announced = false;
+  while (!stopping) {
+    try {
+      const seated = await refreshSeats();
+      if (seated.length > 0) {
+        if (announced) log("info", "table.playersSeated", { tableId, seated: seated.length });
+        return true;
+      }
+    } catch (e) {
+      log("error", "seats.refreshFailed", { tableId, ...describeError(e) });
+      await sleep(backoff(1));
+      continue;
+    }
+    if (!announced) {
+      tableStatus(tableId).stage = "idle";
+      publishStatus();
+      log("info", "table.waitingForPlayers", { tableId, note: "nobody has chips in escrow; no round is opened (no gas) until someone enters a table" });
+      announced = true;
+    }
+    await sleep(seatPollMs);
+  }
+  return false;
+}
 
 // Only one transaction in flight at a time across all tables: the wallet fetches the pending nonce per send,
 // so serialising sends is what keeps nonces monotonic without tracking them by hand.
@@ -520,6 +605,7 @@ async function runTable(tableId: number) {
   }
   let emptyStreak = 0;
   while (!stopping && (maxRounds === 0 || played < maxRounds)) {
+    if (seatedOnly && !dry && !(await waitForPlayers(tableId))) break;
     const rec = await planRound(tableId);
     log("info", "round.planned", { roundId: rec.roundId, tableId, commitment: rec.commitment });
     await driveRound(rec);
