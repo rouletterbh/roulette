@@ -153,3 +153,32 @@ then runs two rounds with `BETTING_SECONDS=2` while anvil account 1 deposits, en
 exactly ±1 per round, `RandomnessManager.verify(roundId)` is true, the treasury is solvent with no leftover
 reservation, and the state/status files are consistent. ~15s. It writes `contracts/broadcast/Deploy.s.sol/31337/`
 (gitignored). Nothing ever touches a public RPC.
+
+## Reward-inventory conversion (`bun run convert`)
+
+The vault is funded by players, never by the founders: 20% of every deposit lands in the treasury's
+`rewardInventory` ETH bucket. `src/convert-inventory.ts` turns that bucket into reward tokens held by the vault:
+
+1. `CasinoTreasury.withdrawRewardInventory(treasurer, amount)` (TREASURER_ROLE)
+2. Uniswap v3 `SwapRouter02.exactInputSingle{value}` ETH → asset, per asset, best fee tier by `QuoterV2`
+3. `asset.approve(vault)` + `RewardVault.fundInventory(asset, amount)` (TREASURER_ROLE)
+
+`bun run convert:dry` (default) prints the plan with live quotes and sends nothing; `bun run convert` executes.
+Every step is simulated first; the pool quote must be within `MAX_DEVIATION_BPS` of the oracle-implied amount
+(CoinGecko ETH/USD × posted asset price) or the run aborts. A crash after the withdrawal leaves
+`state/conversions.json` with the remaining ETH; `bun run convert:resume` finishes the swaps without withdrawing again.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TREASURY_ADDRESS`, `VAULT_ADDRESS` | — | CasinoTreasury / RewardVault |
+| `OPERATOR_PRIVATE_KEY` | — | the TREASURER key (optional for a dry run) |
+| `WEIGHTS` | equal | e.g. `CASHCAT=50,PONS=25,AI=25` |
+| `AMOUNT_WEI` | whole bucket | convert only part of the bucket |
+| `MIN_INVENTORY_WEI` | `0.004 ETH` | refuse below this (≈ $10; gas and slippage make smaller runs pointless) |
+| `SLIPPAGE_BPS` | `100` | minimum-out tolerance |
+| `MAX_DEVIATION_BPS` | `500` | abort if the pool quote is more than this below the oracle-implied amount |
+| `ROUTER_ADDRESS`, `QUOTER_ADDRESS`, `FACTORY_ADDRESS` | official Uniswap v3 on 4663 | override off mainnet |
+
+Uniswap v3 on Robinhood Chain (chain 4663, from the official deployments list, verified by bytecode):
+SwapRouter02 `0xcaf681a66d020601342297493863e78c959e5cb2`, QuoterV2 `0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7`,
+UniswapV3Factory `0x1f7d7550b1b028f7571e69a784071f0205fd2efa`, WETH9 `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`.

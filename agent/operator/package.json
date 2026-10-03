@@ -8,6 +8,9 @@
     "prices:dry": "bun run src/post-prices.ts --once --dry-run",
     "rounds": "bun run src/run-rounds.ts",
     "rounds:dry": "bun run src/run-rounds.ts --dry-run",
+    "convert": "bun run src/convert-inventory.ts --execute",
+    "convert:dry": "bun run src/convert-inventory.ts",
+    "convert:resume": "bun run src/convert-inventory.ts --execute --resume",
     "test": "bun test"
   },
   "dependencies": {
