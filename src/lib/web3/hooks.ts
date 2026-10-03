@@ -159,9 +159,10 @@ export function useCurrentRound(tableId: number): CurrentRound {
     chainId,
     query: poll(enabled && roundId != null),
   });
+  const roundRefetch = round.refetch;
   const refetch = useCallback(() => {
-    void round.refetch();
-  }, [round]);
+    void roundRefetch();
+  }, [roundRefetch]);
 
   const onRoundLog = useCallback(
     (logs: ReadonlyArray<{ args: { roundId?: bigint } }>) => {
@@ -201,9 +202,10 @@ export function useRandomnessRound(roundId: bigint | null): { round: RandomnessR
     if (!d) return null;
     return { commitment: d.commitment, playerSeed: d.playerSeed, serverSeed: d.serverSeed, blockRef: d.blockRef, result: d.result, status: d.status };
   }, [q.data]);
+  const qRefetch = q.refetch;
   const refetch = useCallback(() => {
-    void q.refetch();
-  }, [q]);
+    void qRefetch();
+  }, [qRefetch]);
   return { round, refetch };
 }
 
@@ -266,9 +268,10 @@ export function useTreasurySnapshot(): TreasuryChainSnapshot {
     allowFailure: true,
     query: poll(enabled),
   });
+  const qRefetch = q.refetch;
   const refetch = useCallback(() => {
-    void q.refetch();
-  }, [q]);
+    void qRefetch();
+  }, [qRefetch]);
   return useMemo(() => {
     const r = q.data;
     const val = <T,>(i: number): T | undefined => (r?.[i]?.status === "success" ? (r[i].result as T) : undefined);

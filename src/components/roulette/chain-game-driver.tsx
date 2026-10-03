@@ -110,12 +110,12 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
   }, [phase, chainRoundId, commitment, storeCommitment]);
 
   // (6) When the wheel lands, re-read balances so escrow reflects the chain settlement.
-  const refetchTreasury = treasury.refetch;
+  //     Keyed on the phase transition only: refetch identities must never retrigger it.
   useEffect(() => {
     if (phase !== "result") return;
-    void refetchEscrow();
-    void refetchTreasury();
-  }, [phase, refetchEscrow, refetchTreasury]);
+    void latest.current.escrow.refetch();
+    void latest.current.treasury.refetch();
+  }, [phase]);
 
   /* ------------------------------------------------------------ handlers */
 

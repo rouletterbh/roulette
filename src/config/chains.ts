@@ -4,7 +4,11 @@ import { defineChain } from "viem";
  * Robinhood Chain definitions. Always write "Robinhood Chain".
  * Mainnet 4663, Testnet 46630. Native gas asset: ETH.
  */
+/** Multicall3 is deployed at its canonical address on Robinhood Chain mainnet (verified by bytecode, 2026-10-03). */
+const MULTICALL3 = { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } } as const;
+
 export const robinhoodChain = defineChain({
+  contracts: MULTICALL3,
   id: 4663,
   name: "Robinhood Chain",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },

@@ -11,6 +11,9 @@ import { useLiveTable, SPEED_MS } from "@/store/live-table";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { getMaximumSafeBet } from "@/lib/risk/engine";
 import { demoTreasury, type TableSpeed } from "@/lib/demo/data";
+import type { TreasurySnapshot } from "@/lib/risk/engine";
+
+const EMPTY_TREASURY: TreasurySnapshot = { bankroll: 0, reservedLiability: 0, claimableRewards: 0, protocolReserve: 0, safetyReserveBps: 1500, maxRoundExposureBps: 2500 };
 import { RouletteWheel } from "./roulette-wheel";
 import { RouletteBoard } from "./roulette-board";
 import { ChipSelector } from "./chip-selector";
@@ -92,9 +95,13 @@ function GameTableInner({ config }: { config: GameTableConfig }) {
     if (initialized.current) return;
     if (needsWallet && !connected) return;
     initialized.current = true;
-    const treasury = practice ? undefined : demoTreasury;
+    // Chain-driven tables start from an empty treasury (no bets possible) until ChainGameDriver
+    // mirrors the real CasinoTreasury snapshot; nothing simulated is ever shown as a limit.
+    const treasury = practice ? undefined : chainDriven ? EMPTY_TREASURY : demoTreasury;
     g.init(config.mode, practice ? PRACTICE_BALANCE : chainDriven ? 0 : chips.balance);
     if (treasury) useGame.setState({ treasury: { ...treasury } });
+    // Chain tables show only the operator's on-chain commitment; never a locally generated one.
+    if (chainDriven) useGame.setState({ commitment: null, _serverSeed: null });
     if (config.recent?.length) useGame.setState({ recent: [...config.recent] });
     if (shared) live.start(config.tableId ?? config.name, speed, config.seats ?? 6, chainDriven);
     // eslint-disable-next-line react-hooks/exhaustive-deps
