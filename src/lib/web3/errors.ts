@@ -28,6 +28,8 @@ export type TxErrorCode =
   | "insufficient-win-balance"
   | "asset-unavailable"
   | "reverted"
+  | "dropped"
+  | "timeout"
   | "unknown";
 
 export class TxError extends Error {

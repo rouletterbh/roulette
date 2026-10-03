@@ -299,11 +299,15 @@ export const useGame = create<GameState>()((set, get) => ({
       lastRound: record,
       rounds: [record, ...s.rounds].slice(0, 200),
       recent: [s.pendingReveal.result, ...s.recent].slice(0, 100),
-      treasury: {
-        ...s.treasury,
-        reservedLiability: Math.max(0, s.treasury.reservedLiability - liabilityReleased),
-        bankroll: s.treasury.bankroll + settlement.totalStaked - settlement.totalReturned,
-      },
+      // Chain-driven rounds: the treasury is mirrored from CasinoTreasury by ChainGameDriver; never adjust it locally.
+      treasury:
+        s.chainRoundId != null
+          ? s.treasury
+          : {
+              ...s.treasury,
+              reservedLiability: Math.max(0, s.treasury.reservedLiability - liabilityReleased),
+              bankroll: s.treasury.bankroll + settlement.totalStaked - settlement.totalReturned,
+            },
       stats: {
         spins: s.stats.spins + (played ? 1 : 0),
         wins: s.stats.wins + (won ? 1 : 0),

@@ -1,4 +1,7 @@
-import { getAccount, readContract, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getAccount, getTransaction, readContract, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+
+/** How long the modal waits for a receipt before reporting a dropped or stuck transaction. */
+const RECEIPT_TIMEOUT_MS = 90_000;
 import type { Address, Hex } from "viem";
 import { activeChain } from "@/config/chains";
 import type { PlacedBet } from "@/lib/roulette/bets";
@@ -37,7 +40,17 @@ async function send(report: TxReporter, write: () => Promise<Hex>): Promise<Hex>
   const hash = await write();
   report("submitted", { hash });
   report("confirming", { hash });
-  const receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId, confirmations: 1 });
+  let receipt;
+  try {
+    receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId, confirmations: 1, timeout: RECEIPT_TIMEOUT_MS });
+  } catch (e) {
+    // A wallet can return a hash for a transaction that never reaches the network (seen on mainnet: the
+    // node did not know the hash and the nonce never advanced). Say so instead of spinning forever.
+    const known = await getTransaction(wagmiConfig, { hash, chainId }).then(() => true, () => false);
+    if (!known) throw new TxError("dropped", "The network never saw this transaction. Your wallet may not have broadcast it; nothing was charged. Try again.");
+    if (e instanceof Error && /timed out|timeout/i.test(e.message)) throw new TxError("timeout", "Still waiting for the network to include this transaction. Check the explorer link before retrying.");
+    throw e;
+  }
   if (receipt.status !== "success") throw new TxError("reverted", "Transaction reverted on chain.");
   return hash;
 }
