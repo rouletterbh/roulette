@@ -182,3 +182,19 @@ Every step is simulated first; the pool quote must be within `MAX_DEVIATION_BPS`
 Uniswap v3 on Robinhood Chain (chain 4663, from the official deployments list, verified by bytecode):
 SwapRouter02 `0xcaf681a66d020601342297493863e78c959e5cb2`, QuoterV2 `0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7`,
 UniswapV3Factory `0x1f7d7550b1b028f7571e69a784071f0205fd2efa`, WETH9 `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`.
+
+## Running on Railway (always-on)
+
+One image (`Dockerfile`), two services from this repo with **Root Directory `agent/operator`**:
+
+| Service | `PROCESS` | Volume | Notes |
+|---|---|---|---|
+| `rounds` | `rounds` | mount at `/data` (required: server seeds live in `STATE_DIR=/data`) | set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=120` so a redeploy lets the in-flight round finish |
+| `prices` | `prices` | none | posts every `INTERVAL_SEC` (300) |
+
+Shared variables: `OPERATOR_PRIVATE_KEY` (a **hot key that holds only OPERATOR_ROLE**, never the admin/treasurer key),
+`RPC_URL`, `CHAIN_ID=4663`. `rounds` also needs `GAME_ADDRESS`, `RANDOMNESS_ADDRESS`, `TABLE_IDS=1`,
+`SCAN_FROM_BLOCK=78563886` and, on a fresh volume, `NEXT_ROUND_ID` (the next unused round id). `prices` needs
+`ORACLE_ADDRESS`. `railway.json` pins the Dockerfile builder, `restartPolicyType: ALWAYS` and watch paths so only
+changes under `agent/operator/**` redeploy the services. Run exactly ONE round operator at a time: stop the local
+one before the hosted one starts. `bun run convert` stays a local, manual command with the treasurer key.

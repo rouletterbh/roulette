@@ -22,7 +22,8 @@
  *           SEATED_ONLY (true: open rounds only while at least one player has chips in escrow; otherwise just watch),
  *           SEAT_POLL_MS (5000), SCAN_FROM_BLOCK (first block to scan EscrowDeposited from; default: latest-50000),
  *           SCAN_CHUNK_BLOCKS (5000), MAX_ROUNDS (0 = forever; also --rounds=N), ACL_ADDRESS (default: game.ACL()),
- *           STATE_DIR (./state), POLL_MS (1000), TX_TIMEOUT_MS (120000), MAX_BACKOFF_MS (30000)
+ *           STATE_DIR (./state), NEXT_ROUND_ID (first round id when the state dir is empty; used ids are skipped anyway),
+ *           POLL_MS (1000), TX_TIMEOUT_MS (120000), MAX_BACKOFF_MS (30000)
  * Flags: --dry-run (verify config + roles, print the plan, send nothing), --rounds=N
  *
  * Safety: never sends when --dry-run; fails fast when the key lacks OPERATOR_ROLE, when CHAIN_ID does not match
@@ -165,7 +166,8 @@ interface Status {
 }
 
 function loadState(): State {
-  if (!existsSync(roundsFile)) return { version: 1, nextRoundId: "1", rounds: {} };
+  // A fresh state dir (e.g. a new host) can start the counter past rounds already used onchain.
+  if (!existsSync(roundsFile)) return { version: 1, nextRoundId: /^\d+$/.test(process.env.NEXT_ROUND_ID ?? "") ? process.env.NEXT_ROUND_ID! : "1", rounds: {} };
   const s = JSON.parse(readFileSync(roundsFile, "utf8")) as State;
   if (s.version !== 1) throw new Error(`unsupported state version in ${roundsFile}`);
   return s;
