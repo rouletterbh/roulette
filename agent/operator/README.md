@@ -195,6 +195,7 @@ One image (`Dockerfile`), two services from this repo with **Root Directory `age
 Shared variables: `OPERATOR_PRIVATE_KEY` (a **hot key that holds only OPERATOR_ROLE**, never the admin/treasurer key),
 `RPC_URL`, `CHAIN_ID=4663`. `rounds` also needs `GAME_ADDRESS`, `RANDOMNESS_ADDRESS`, `TABLE_IDS=1`,
 `SCAN_FROM_BLOCK=78563886` and, on a fresh volume, `NEXT_ROUND_ID` (the next unused round id). `prices` needs
-`ORACLE_ADDRESS`. `railway.json` pins the Dockerfile builder, `restartPolicyType: ALWAYS` and watch paths so only
-changes under `agent/operator/**` redeploy the services. Run exactly ONE round operator at a time: stop the local
+`ORACLE_ADDRESS`. Railway no longer lets new services opt in to config-as-code, so `railway.json` is informational:
+Root Directory, variables and the volume are set in the dashboard (the Dockerfile in the root directory is picked up
+automatically). The repo was added by public URL, so deploys are manual: Settings → Source → "Check for updates". Run exactly ONE round operator at a time: stop the local
 one before the hosted one starts. `bun run convert` stays a local, manual command with the treasurer key.
