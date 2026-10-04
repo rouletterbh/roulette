@@ -1,7 +1,7 @@
 import type { Address, Hex } from "viem";
 import type { ContractKey } from "@/lib/web3/contracts";
 import { ROUND_STATUS } from "@/lib/web3/contracts";
-import type { AccountState, ChainBet, ChainHead, ChainReader, ChainRoundFull, GameConfig, LatestRounds, RewardAssetState, TreasuryState, VaultTotals } from "@/lib/web3/server";
+import type { AccountState, ChainBet, ChainHead, ChainReader, ChainRoundFull, GameConfig, LatestRounds, RewardAssetState, TreasuryState, VaultTotals, OperatorWallet } from "@/lib/web3/server";
 import { ContractNotConfiguredError } from "@/lib/web3/server";
 import type { ChainTableRecord, SettledRoundRecord } from "@/lib/web3/treasury-view";
 import { MASK_RED } from "@/lib/agent/encode-bets";
@@ -149,6 +149,8 @@ export interface FakeChain {
   addresses: Record<ContractKey, Address | null>;
   /** Make every read reject, as an unreachable RPC would. */
   down: boolean;
+  /** Operator gas wallet as /health would infer it; undefined = no recent activity visible. */
+  operatorWallet?: OperatorWallet | null;
 }
 
 export function fakeChain(over: Partial<FakeChain> = {}): FakeChain {
@@ -207,6 +209,7 @@ export function fakeReader(state: FakeChain = fakeChain()): ChainReader & { call
         },
         ["game"],
       ),
+    operatorWallet: () => read("operatorWallet", () => state.operatorWallet ?? null),
     round: (id) => read("round", () => byId(id), ["game"]),
     rounds: (ids) => read("rounds", () => ids.map(byId).filter((r): r is ChainRoundFull => r != null), ["game"]),
     bets: (id) => read("bets", () => state.bets[id.toString()] ?? [], ["game"]),

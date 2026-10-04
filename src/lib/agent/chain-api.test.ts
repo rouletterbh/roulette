@@ -171,6 +171,15 @@ describe("reads", () => {
       operator: { lastRoundOpened: { roundId: 300, status: "Open", ageSeconds: 10 }, newestOraclePrice: { ageSeconds: 369 }, seatedEscrowUnits: 45 },
     });
     expect(h.data.contracts.RouletteGame).toBe(ADDR.game);
+    expect(h.data.operator.wallet).toBeNull();
+    expect(h.data.warnings).toEqual([]);
+    const funded = (await json(await chainHealth(fakeReader({ ...state, operatorWallet: { address: ADDR.game, balanceWei: 5_000_000_000_000_000n, source: "round-opened" } })))).body.data;
+    expect(funded.operator.wallet).toMatchObject({ balanceEth: "0.005", lowGas: false, source: "round-opened" });
+    expect(funded.warnings).toEqual([]);
+    const low = (await json(await chainHealth(fakeReader({ ...state, operatorWallet: { address: ADDR.game, balanceWei: 400_000_000_000_000n, source: "oracle-post" } })))).body.data;
+    expect(low.operator.wallet).toMatchObject({ balanceEth: "0.0004", lowGas: true, source: "oracle-post" });
+    expect(low.warnings[0]).toMatch(/below 0\.001 ETH/);
+    expect(low.status).toBe("ok");
     const idle = (await json(await chainHealth(fakeReader()))).body.data;
     expect(idle.operator.lastRoundOpened).toBeNull();
     expect(idle.operator.lastRoundOpenedNote).toMatch(/No RoundOpened log in the last 60000 blocks/);

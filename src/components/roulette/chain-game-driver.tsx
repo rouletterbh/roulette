@@ -38,6 +38,9 @@ const toPlaced = (bets: Record<string, number>): PlacedBet[] =>
       return def ? [{ ...def, stake }] : [];
     });
 
+/** Below this many seconds left in the (approximate) betting window, the table refuses to start a bet transaction. */
+const LATE_BET_GUARD_SECONDS = 10;
+
 /** Seconds until the operator is expected to close bets (approximate: the window is not on chain). */
 function useBetsCloseIn(openedAt: number, open: boolean): number | null {
   const [now, setNow] = useState(() => Date.now());
@@ -138,6 +141,9 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
     if (g.phase !== "betting" || g.chainRoundId == null) return;
     if (L.gameplayPaused) return useGame.setState({ error: "Gameplay is paused by the operator" });
     if (L.round.status !== ROUND_STATUS.Open) return useGame.setState({ error: "The round is not open on chain" });
+    // A bet needs a wallet signature and a block; submitting in the last seconds only burns the signature.
+    const secondsLeft = L.round.openedAt ? L.round.openedAt + BETTING_WINDOW_SECONDS - Date.now() / 1000 : Infinity;
+    if (secondsLeft < LATE_BET_GUARD_SECONDS) return useGame.setState({ error: "Too late for this round: bets are about to close. Your slip is kept; place it when the next round opens." });
     const submitted = useChainGame.getState().submittedBets;
     const reduced = Object.entries(submitted).some(([id, stake]) => (g.bets[id] ?? 0) < stake);
     if (reduced) {
@@ -263,7 +269,7 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
             )}
             {closeIn != null && (
               <span className="tnum text-muted" aria-live="polite">
-                · bets close in about {closeIn}s
+                · {closeIn < LATE_BET_GUARD_SECONDS ? "closing: too late to bet this round" : `bets close in about ${closeIn}s`}
               </span>
             )}
             {gameplayPaused && <Badge tone="red">Gameplay paused</Badge>}

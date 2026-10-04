@@ -147,7 +147,7 @@ describe("server chain reader", () => {
     const first = await r.latestRounds();
     expect(s.logRanges[0]).toEqual(["RoundOpened", 940_000n, 1_000_000n]);
     expect(first.rounds.map((x) => [x.roundId, x.status])).toEqual([[245n, ROUND_STATUS.Open]]);
-    expect(first.lastOpened).toEqual({ roundId: 245n, tableId: 1, blockNumber: 999_000n });
+    expect(first.lastOpened).toEqual({ roundId: 245n, tableId: 1, blockNumber: 999_000n, operator: null });
     expect(first.window).toEqual({ fromBlock: 940_000n, toBlock: 1_000_000n });
     // New blocks: only the tail is scanned, and the newer round takes over.
     s.mine(100n);

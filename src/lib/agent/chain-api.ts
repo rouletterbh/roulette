@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BaseError, parseUnits, type Address } from "viem";
+import { BaseError, formatEther, parseUnits, type Address } from "viem";
 import { activeChain } from "@/config/chains";
 import { siteConfig } from "@/config/site";
 import { chipDenominations, chipTokenIds, rewardRegistry, type ChipDenomination } from "@/config/tokens";
@@ -57,6 +57,9 @@ export class ApiFailure extends Error {
 const LIVE = { demo: false } as const;
 
 /** Cache-Control max-age (seconds) for chain reads: in step with the reader's hot TTL. */
+/** Below this the operator has gas for only ~60 played rounds; /health raises a warning. */
+export const OPERATOR_LOW_GAS_WEI = 10n ** 15n;
+
 export const CHAIN_MAX_AGE = { hot: 4, history: 15, finalRound: 60, health: 5 } as const;
 
 /** Runs a handler and maps failures to the error envelope. RPC errors are never cached or papered over. */
@@ -319,7 +322,7 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
       (value) => ({ value }),
       (e: unknown) => ({ error: e instanceof BaseError ? e.shortMessage : e instanceof Error ? e.message : String(e) }),
     );
-  const [head, treasury, latest, assets] = await Promise.all([settle(reader.head()), settle(reader.treasury()), settle(reader.latestRounds()), settle(reader.rewardAssets())]);
+  const [head, treasury, latest, assets, opWallet] = await Promise.all([settle(reader.head()), settle(reader.treasury()), settle(reader.latestRounds()), settle(reader.rewardAssets()), settle(reader.operatorWallet())]);
   if ("error" in head) {
     return ok(
       { status: "degraded", ...base, chain: { ...chain, reachable: false, error: head.error.slice(0, 300) }, time: new Date().toISOString() },
@@ -333,6 +336,9 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
   const priced = "value" in assets ? assets.value.filter((x) => x.oracleUpdatedAt != null) : [];
   const newestPrice = priced.length ? Math.max(...priced.map((x) => x.oracleUpdatedAt!)) : null;
   const problems = [treasury, latest, assets].flatMap((r) => ("error" in r ? [r.error.slice(0, 200)] : []));
+  const w = "value" in opWallet ? opWallet.value : null;
+  const lowGas = w != null && w.balanceWei < OPERATOR_LOW_GAS_WEI;
+  const warnings = lowGas ? [`Operator wallet ${w.address} holds ${formatEther(w.balanceWei)} ETH: below ${formatEther(OPERATOR_LOW_GAS_WEI)} ETH. Top it up or rounds and price posts will stop.`] : [];
   return ok(
     {
       status: problems.length || !contractsDeployed || (t && !t.raw.isSolvent) ? "degraded" : "ok",
@@ -346,10 +352,13 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
         lastRoundOpenedNote: newestRound ? null : l ? `No RoundOpened log in the last ${Number(l.window.toBlock - l.window.fromBlock)} blocks.` : null,
         newestOraclePrice: newestPrice != null ? { updatedAt: newestPrice, ageSeconds: Math.max(0, now - newestPrice) } : null,
         seatedEscrowUnits: t ? Number(t.escrowUnits) : null,
+        /** Gas wallet of the operator, inferred from the newest round or oracle post. null when no recent activity is visible. */
+        wallet: w ? { address: w.address, balanceEth: formatEther(w.balanceWei), balanceWei: w.balanceWei.toString(), lowGas, lowGasThresholdEth: formatEther(OPERATOR_LOW_GAS_WEI), source: w.source } : null,
         mode: "seated-only: rounds open only while someone has chips in table escrow, so an idle table is normal",
       },
       scanWindow: l ? scanWindowView(l.window) : null,
       problems,
+      warnings,
       time: new Date().toISOString(),
     },
     { ...LIVE, maxAge: CHAIN_MAX_AGE.health },

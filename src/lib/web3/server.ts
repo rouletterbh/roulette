@@ -108,8 +108,16 @@ export interface LatestRounds {
   /** Newest round of every table that opened a round inside the scan window. */
   rounds: ChainRoundRecord[];
   /** Newest RoundOpened log in the window (any table). */
-  lastOpened: { roundId: bigint; tableId: number; blockNumber: bigint } | null;
+  lastOpened: { roundId: bigint; tableId: number; blockNumber: bigint; operator?: Address | null } | null;
   window: { fromBlock: bigint; toBlock: bigint };
+}
+
+/** The wallet that runs rounds and posts prices, inferred from chain activity, with its gas balance. */
+export interface OperatorWallet {
+  address: Address;
+  balanceWei: bigint;
+  /** How the address was found: the newest RoundOpened log, or the sender of the newest oracle price post. */
+  source: "round-opened" | "oracle-post";
 }
 
 export interface RewardAssetState {
@@ -164,6 +172,8 @@ export interface ChainReader {
   /** RewardVault.quote; null when it reverts (unregistered, zero or stale price). */
   quoteClaim(asset: Address, usd1e18: bigint): Promise<{ amountOut: bigint; price: bigint } | null>;
   account(address: Address): Promise<AccountState>;
+  /** null when no operator activity is visible in the scanned windows. */
+  operatorWallet(): Promise<OperatorWallet | null>;
 }
 
 /** A contract the read needs has no `NEXT_PUBLIC_*_ADDRESS`. Routes answer CONTRACTS_NOT_DEPLOYED. */
@@ -217,9 +227,16 @@ function orUndefinedOnRevert<T>(p: Promise<T>): Promise<T | undefined> {
 
 /**
  * Optional server-side override for how far back round history and stats look
- * (`CHAIN_HISTORY_SCAN_BLOCKS`, L2 blocks). Defaults to the same window as the UI
- * (`NEXT_PUBLIC_ROUND_SCAN_BLOCKS`); the window actually used is reported in every response.
+ * (`CHAIN_HISTORY_SCAN_BLOCKS`, L2 blocks). Defaults to 3,000,000 blocks (about 3.5 days), scanned in
+ * 500,000-block requests; the window actually used is reported in every response.
  */
+/** ~3.5 days at ~10 L2 blocks/s. One full scan per process, then only new blocks (see LogWindow). */
+const DEFAULT_HISTORY_SCAN_BLOCKS = 3_000_000n;
+/** eth_getLogs range per request for the history scan. */
+const HISTORY_CHUNK_BLOCKS = 500_000n;
+/** How far back to look for an oracle post when no round was opened recently (~10 min; the relay posts every 5). */
+const ORACLE_POST_SCAN_BLOCKS = 8_000n;
+
 function historyScanFromEnv(): bigint | null {
   const v = process.env.CHAIN_HISTORY_SCAN_BLOCKS;
   return v && /^[1-9]\d{0,8}$/.test(v) ? BigInt(v) : null;
@@ -227,12 +244,14 @@ function historyScanFromEnv(): bigint | null {
 
 const roundOpenedEvent = getAbiItem({ abi: rouletteGameAbi, name: "RoundOpened" });
 const roundSettledEvent = getAbiItem({ abi: rouletteGameAbi, name: "RoundSettled" });
+const pricePostedEvent = getAbiItem({ abi: postedPriceOracleAbi, name: "PricePosted" });
 const ONE_USD = 10n ** 18n;
 
 interface OpenedLog {
   roundId: bigint;
   tableId: number;
   blockNumber: bigint;
+  operator: Address | null;
 }
 
 export interface ChainReaderOptions {
@@ -248,7 +267,7 @@ export function createChainReader(opts: ChainReaderOptions = {}): ChainReader {
   const client = () => (clientInstance ??= createChainClient());
   const addresses = opts.addresses ?? contractAddresses;
   const scanBlocks = opts.scanBlocks ?? ROUND_SCAN_BLOCKS;
-  const historyScanBlocks = opts.historyScanBlocks ?? historyScanFromEnv() ?? scanBlocks;
+  const historyScanBlocks = opts.historyScanBlocks ?? historyScanFromEnv() ?? DEFAULT_HISTORY_SCAN_BLOCKS;
   const cache = opts.cache ?? new TtlCache();
   const finalRounds = new Map<string, ChainRoundFull>();
   const latestByTable = new Map<number, bigint>();
@@ -272,16 +291,22 @@ export function createChainReader(opts: ChainReaderOptions = {}): ChainReader {
 
   const openedWindow = new LogWindow<OpenedLog>(async (fromBlock, toBlock) => {
     const logs = await client().getLogs({ address: need("game"), event: roundOpenedEvent, fromBlock, toBlock });
-    return logs.flatMap((l) => (l.args.roundId != null && l.args.tableId != null && l.blockNumber != null ? [{ roundId: l.args.roundId, tableId: l.args.tableId, blockNumber: l.blockNumber }] : []));
+    return logs.flatMap((l) => (l.args.roundId != null && l.args.tableId != null && l.blockNumber != null ? [{ roundId: l.args.roundId, tableId: l.args.tableId, blockNumber: l.blockNumber, operator: l.args.operator ?? null }] : []));
   }, scanBlocks);
 
   const settledWindow = new LogWindow<SettledRoundRecord>(async (fromBlock, toBlock) => {
-    const logs = await client().getLogs({ address: need("game"), event: roundSettledEvent, fromBlock, toBlock });
-    return logs.flatMap((l) =>
-      l.args.roundId != null && l.blockNumber != null
-        ? [{ roundId: l.args.roundId, result: l.args.result ?? 0, totalStaked: l.args.totalStaked ?? 0n, totalReturned: l.args.totalReturned ?? 0n, blockNumber: l.blockNumber }]
-        : [],
-    );
+    const out: SettledRoundRecord[] = [];
+    // The history window is large: scan it in bounded requests so one call never asks for millions of blocks.
+    for (let from = fromBlock; from <= toBlock; from += HISTORY_CHUNK_BLOCKS) {
+      const to = from + HISTORY_CHUNK_BLOCKS - 1n < toBlock ? from + HISTORY_CHUNK_BLOCKS - 1n : toBlock;
+      const logs = await client().getLogs({ address: need("game"), event: roundSettledEvent, fromBlock: from, toBlock: to });
+      for (const l of logs) {
+        if (l.args.roundId != null && l.blockNumber != null) {
+          out.push({ roundId: l.args.roundId, result: l.args.result ?? 0, totalStaked: l.args.totalStaked ?? 0n, totalReturned: l.args.totalReturned ?? 0n, blockNumber: l.blockNumber });
+        }
+      }
+    }
+    return out;
   }, historyScanBlocks);
 
   const treasury = () =>
@@ -487,7 +512,32 @@ export function createChainReader(opts: ChainReaderOptions = {}): ChainReader {
       return { address, chips, chipUnits: chipUnits(chips), approved, escrowUnits, winBalanceUsd1e18, withdrawableWei };
     });
 
-  return { chainId: activeChain.id, addresses, scanBlocks, historyScanBlocks, head, treasury, game, tables, latestRounds, round, rounds, bets, settledRounds, rewardAssets, vaultTotals, quoteClaim, account };
+  const operatorWallet = () =>
+    cache.get("operatorWallet", CHAIN_CACHE_TTL.settledLogs, async (): Promise<OperatorWallet | null> => {
+      const c = client();
+      let address: Address | null = null;
+      let source: OperatorWallet["source"] = "round-opened";
+      const opened = await latestRounds().catch(() => null);
+      address = opened?.lastOpened?.operator ?? null;
+      if (!address) {
+        // Idle table (seated-only operator): the relay still posts prices from the same key every few minutes.
+        const oracle = (await rewardAssets().catch(() => [])).find((a) => a.oracle)?.oracle ?? null;
+        if (oracle) {
+          const h = await head();
+          const from = h.blockNumber > ORACLE_POST_SCAN_BLOCKS ? h.blockNumber - ORACLE_POST_SCAN_BLOCKS : 0n;
+          const logs = await c.getLogs({ address: oracle, event: pricePostedEvent, fromBlock: from, toBlock: h.blockNumber });
+          const last = logs[logs.length - 1];
+          if (last?.transactionHash) {
+            address = (await c.getTransaction({ hash: last.transactionHash })).from;
+            source = "oracle-post";
+          }
+        }
+      }
+      if (!address) return null;
+      return { address, balanceWei: await c.getBalance({ address }), source };
+    });
+
+  return { chainId: activeChain.id, addresses, scanBlocks, historyScanBlocks, head, treasury, game, tables, latestRounds, round, rounds, bets, settledRounds, rewardAssets, vaultTotals, quoteClaim, account, operatorWallet };
 }
 
 /* -------------------------------------------------------------- singleton */
