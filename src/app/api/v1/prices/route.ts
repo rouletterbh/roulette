@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { rewardRegistry } from "@/config/tokens";
 import { getTokenPrices } from "@/lib/prices/coingecko";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { getChainReader } from "@/lib/web3/server";
+import { chainPrices } from "@/lib/agent/chain-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Reference prices for registry assets with a contract address. Mirrors what the operator posts to the onchain oracle. */
+/**
+ * Prices for reward assets.
+ *   demo mode on : reference prices from CoinGecko (what the operator relays), as before.
+ *   demo mode off: the posted on-chain oracle is the only source; CoinGecko is never called.
+ */
 export async function GET() {
+  if (CHAIN_BACKED) return chainPrices(getChainReader());
   const assets = rewardRegistry.filter((t) => t.contractAddress);
   const prices = await getTokenPrices(assets.map((t) => t.contractAddress!));
   const data = assets.map((t) => {

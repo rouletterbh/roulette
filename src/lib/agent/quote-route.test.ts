@@ -104,6 +104,29 @@ describe("POST /api/v1/verify", () => {
     expect(noResult.data.verified).toBe(true);
   });
 
+  it("verifies a chain round, with the uint256 round id as a number or a decimal string", async () => {
+    // Round 109 on Robinhood Chain mainnet (5 on Red, result 28), seeds as revealed on chain.
+    const body = {
+      commitment: "0x6ea6fc55d885afec1cfbc41d87f693c4e1c768a7ee09cf199efb9e25745ae45c",
+      serverSeed: "0x91b701c33dc38befce7989e337e8e137e51575ea1d4bd25f1536df829d017b81",
+      playerSeed: "0x204e406319ccc83f0146d1281914afe94070788bfe2fec3d4506a5a5e784303f",
+      blockRef: "0x952b9c16e89f70b33bb13ad8d9f0de58f076733cef6ae08e311af44f092642de",
+      result: 28,
+    };
+    for (const roundId of [109, "109"]) {
+      const json = await (await verifyPost(post("/api/v1/verify", { ...body, roundId }))).json();
+      expect(json.data).toMatchObject({ roundId, commitOk: true, derivedResult: 28, derivedColor: "black", resultOk: true, verified: true });
+    }
+    // The round id is part of the preimage: another id derives another pocket.
+    const other = await (await verifyPost(post("/api/v1/verify", { ...body, roundId: "110" }))).json();
+    expect(other.data.resultOk).toBe(false);
+    // Ids beyond 2^53 are accepted as strings; beyond uint256 they are rejected.
+    const big = await verifyPost(post("/api/v1/verify", { ...body, roundId: (2n ** 200n).toString(), result: undefined }));
+    expect(big.status).toBe(200);
+    expect((await verifyPost(post("/api/v1/verify", { ...body, roundId: (2n ** 256n).toString() }))).status).toBe(400);
+    expect((await verifyPost(post("/api/v1/verify", { ...body, roundId: "-1" }))).status).toBe(400);
+  });
+
   it("rejects malformed hex", async () => {
     const res = await verifyPost(post("/api/v1/verify", { roundId: 1, commitment: "0x12", serverSeed: "0x", playerSeed: "0x", blockRef: "0x" }));
     expect(res.status).toBe(400);

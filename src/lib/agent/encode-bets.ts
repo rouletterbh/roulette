@@ -81,3 +81,42 @@ export function contractBetToJson(b: ContractBet) {
     stake: b.stake.toString(),
   };
 }
+
+const OUTSIDE_BY_MASK: ReadonlyArray<readonly [bigint, number, string]> = [
+  [MASK_RED, 1, "red"],
+  [MASK_BLACK, 1, "black"],
+  [MASK_ODD, 1, "odd"],
+  [MASK_EVEN, 1, "even"],
+  [MASK_LOW, 1, "low"],
+  [MASK_HIGH, 1, "high"],
+  [MASK_DOZEN_1, 2, "dozen:1"],
+  [MASK_DOZEN_2, 2, "dozen:2"],
+  [MASK_DOZEN_3, 2, "dozen:3"],
+  [MASK_COLUMN_1, 2, "column:1"],
+  [MASK_COLUMN_2, 2, "column:2"],
+  [MASK_COLUMN_3, 2, "column:3"],
+];
+
+/**
+ * Reverse of `encodeBetById`: the stable bet id for an on-chain (mask, multiplier) pair,
+ * or null when the pair is not a bet the web app can name. Used to describe bets read
+ * back from `RouletteGame.getBets`.
+ */
+export function betIdFromContract(numbersMask: bigint, multiplier: number): string | null {
+  const outside = OUTSIDE_BY_MASK.find(([m, mult]) => m === numbersMask && mult === multiplier);
+  if (outside) return outside[2];
+  let numbers: number[];
+  try {
+    numbers = maskToNumbers(numbersMask);
+  } catch {
+    return null;
+  }
+  const first = numbers[0];
+  if (first === undefined) return null;
+  const candidate =
+    numbers.length === 1 ? `straight:${first}` : numbers.length === 2 ? `split:${first}-${numbers[1]}` : numbers.length === 3 ? `street:${first}` : numbers.length === 4 ? `corner:${first}` : numbers.length === 6 ? `sixline:${first}` : null;
+  if (!candidate) return null;
+  const def = betFromId(candidate);
+  if (!def || def.multiplier !== multiplier || !isValidBet(def)) return null;
+  return numbersToMask(def.numbers) === numbersMask ? def.id : null;
+}

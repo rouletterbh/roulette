@@ -11,6 +11,8 @@ import { robinhoodChain, robinhoodChainTestnet } from "@/config/chains";
 import { datasetCatalog } from "@/lib/agent/datasets";
 import { API_VERSION } from "@/lib/agent/envelope";
 import { FUNCTION_SIGNATURES } from "@/lib/agent/intents";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { activeChain } from "@/config/chains";
 
 export const metadata: Metadata = {
   title: "Developers",
@@ -43,6 +45,7 @@ const endpoints = [
   ["GET", "/api/v1/treasury", "Solvency snapshot and per-round cap"],
   ["GET", "/api/v1/limits?multiplier=35", "Max safe stake for a payout multiplier"],
   ["GET", "/api/v1/rewards", "Reward inventory and statuses"],
+  ["GET", "/api/v1/prices", "Reward asset prices"],
   ["GET", "/api/v1/rounds", "Settled rounds with fairness proofs"],
   ["GET", "/api/v1/rounds/{id}", "One round, with a ready verify body"],
   ["GET", "/api/v1/stats", "Outcome counts over a window"],
@@ -63,6 +66,7 @@ const mcpTools = [
   "get_treasury",
   "get_limits",
   "list_rewards",
+  "list_prices",
   "list_rounds",
   "get_round",
   "get_stats",
@@ -87,7 +91,7 @@ export default function DevelopersPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <DemoBadge />
+          {!CHAIN_BACKED && <DemoBadge />}
           <Badge tone="amber">API beta · {API_VERSION}</Badge>
         </div>
       </header>
@@ -134,8 +138,18 @@ export default function DevelopersPage() {
             ))}
           </ol>
           <p>
-            Responses share one envelope: <code className={code}>{`{ ok, demo, data }`}</code> or <code className={code}>{`{ ok: false, error: { code, message } }`}</code>. While the protocol
-            runs on simulated data, <strong>every response says so</strong> with <code className={code}>demo: true</code>.
+            Responses share one envelope: <code className={code}>{`{ ok, demo, data }`}</code> or <code className={code}>{`{ ok: false, error: { code, message } }`}</code>.{" "}
+            {CHAIN_BACKED ? (
+              <>
+                Every route reads the deployed contracts on Robinhood Chain through a cache of a few seconds, and <strong>every response says so</strong> with{" "}
+                <code className={code}>demo: false</code>. When the chain cannot be read the answer is <code className={code}>CHAIN_UNAVAILABLE</code>, never substitute data. Amounts are whole
+                chip units; USD figures are derived from the treasury&apos;s chip peg and labelled as such.
+              </>
+            ) : (
+              <>
+                While the protocol runs on simulated data, <strong>every response says so</strong> with <code className={code}>demo: true</code>.
+              </>
+            )}
           </p>
         </Section>
 
@@ -182,13 +196,13 @@ export default function DevelopersPage() {
             ))}
           </ul>
           <CodeBlock label="Intent shape" lang="json">{`{
-  "to": "0x…" | null,          // null until contracts deploy (CONTRACTS_NOT_DEPLOYED preview)
+  "to": ${CHAIN_BACKED ? '"0x…",                 // the deployed contract' : '"0x…" | null,          // null until contracts deploy (CONTRACTS_NOT_DEPLOYED preview)'}
   "contract": "RouletteGame",
-  "chainId": ${robinhoodChainTestnet.id},             // Robinhood Chain Testnet · mainnet ${robinhoodChain.id}
+  "chainId": ${CHAIN_BACKED ? `${activeChain.id},               // ${activeChain.name}` : `${robinhoodChainTestnet.id},             // Robinhood Chain Testnet · mainnet ${robinhoodChain.id}`}
   "value": "0",
   "data": "0x…",               // ABI-encoded calldata your wallet signs
   "abi": { "name": "placeBets", "signature": "${FUNCTION_SIGNATURES.placeBets}", "args": [...] },
-  "description": "Place 1 bet(s) on round 120500: Red 10.",
+  "description": "Place 1 bet(s) on round ${CHAIN_BACKED ? "246" : "120500"}: Red 10.",
   "warnings": ["Unsigned intent. Review calldata and sign with your own wallet; this API never holds keys.", ...],
   "signedBy": "agent-wallet"
 }`}</CodeBlock>
@@ -198,13 +212,25 @@ export default function DevelopersPage() {
           <CodeBlock label="1 · Health" lang="sh">{`curl -s https://<host>/api/v1/health | jq .data.chain`}</CodeBlock>
           <CodeBlock label="2 · Quote a bet set" lang="sh">{`curl -s -X POST https://<host>/api/v1/quote \\
   -H 'content-type: application/json' \\
-  -d '{"bets":[{"betId":"red","stake":10},{"betId":"straight:17","stake":1}],"table":"neon-01"}' \\
+  -d '{"bets":[{"betId":"red","stake":10},{"betId":"straight:17","stake":1}],"table":"${CHAIN_BACKED ? "1" : "neon-01"}"}' \\
   | jq '{accepted: .data.accepted, maxNetPayout: .data.maximumLiability.maxNetPayout, cap: .data.limit.maxRoundExposure}'`}</CodeBlock>
-          <CodeBlock label="3 · Verify a round" lang="sh">{`ROUND=$(curl -s 'https://<host>/api/v1/rounds?limit=1' | jq '.data.rounds[0]')
+          <CodeBlock label="3 · Verify a round" lang="sh">{CHAIN_BACKED
+            ? `BODY=$(curl -s https://<host>/api/v1/rounds/109 | jq .data.verify.body)
+curl -s -X POST https://<host>/api/v1/verify \\
+  -H 'content-type: application/json' \\
+  -d "$BODY" \\
+  | jq .data`
+            : `ROUND=$(curl -s 'https://<host>/api/v1/rounds?limit=1' | jq '.data.rounds[0]')
 curl -s -X POST https://<host>/api/v1/verify \\
   -H 'content-type: application/json' \\
   -d "$(echo "$ROUND" | jq '{roundId, commitment, serverSeed, playerSeed, blockRef, result}')" \\
   | jq .data`}</CodeBlock>
+          {CHAIN_BACKED && (
+            <CodeBlock label="4 · Prepare a seat (unsigned)" lang="sh">{`curl -s -X POST https://<host>/api/v1/intents/enter-table \\
+  -H 'content-type: application/json' \\
+  -d '{"address":"0xYourWallet"}' \\
+  | jq '{to: .data.intent.to, data: .data.intent.data, approveFirst: (.data.prerequisites | length), error: .error.code}'`}</CodeBlock>
+          )}
           <p>
             Bet ids are stable strings: <code className={code}>red</code>, <code className={code}>dozen:2</code>, <code className={code}>straight:17</code>,{" "}
             <code className={code}>split:17-20</code>, <code className={code}>corner:25</code>. Stakes are chip units. On chain, a bet is{" "}
@@ -221,7 +247,7 @@ curl -s -X POST https://<host>/api/v1/verify \\
           </div>
         </Section>
 
-        <Section id="mcp" n="04" eyebrow="MCP server" title="Fifteen tools, stdio transport, zero keys.">
+        <Section id="mcp" n="04" eyebrow="MCP server" title="Sixteen tools, stdio transport, zero keys.">
           <p>
             The MCP server lives in <code className={code}>agent/mcp</code> of the repository. It is a thin client over the REST API: every tool calls an endpoint and returns the structured
             result, so there is exactly one place where limits and encodings are defined.
@@ -231,7 +257,7 @@ curl -s -X POST https://<host>/api/v1/verify \\
     "roulette": {
       "command": "bun",
       "args": ["run", "/path/to/repo/agent/mcp/src/index.ts"],
-      "env": { "ROULETTE_API_URL": "https://<host>" }
+      "env": { "ROULETTE_API_URL": "https://<host>" }   // optional: defaults to the production site
     }
   }
 }`}</CodeBlock>
@@ -249,15 +275,23 @@ curl -s -X POST https://<host>/api/v1/verify \\
             </ul>
           </div>
           <p>
-            The four <code className={code}>build_*</code> tools return intents, not receipts. Hand them to the wallet integration your agent already trusts.
+            The four <code className={code}>build_*</code> tools{CHAIN_BACKED ? " take your wallet address, check its onchain balances and" : ""} return intents, not receipts. Hand them to the wallet integration your agent already trusts.
           </p>
         </Section>
 
-        <Section id="endpoints" n="05" eyebrow="Endpoints" title="Seventeen routes under /api/v1.">
+        <Section id="endpoints" n="05" eyebrow="Endpoints" title="Eighteen routes under /api/v1.">
           <EndpointTable endpoints={endpoints} />
           <p>
             Reads are cached briefly and allow any origin. POST routes are lightly rate limited per client. Errors use stable codes: <code className={code}>VALIDATION_ERROR</code>,{" "}
-            <code className={code}>NOT_FOUND</code>, <code className={code}>RATE_LIMITED</code>, <code className={code}>TABLE_LIMIT</code>, <code className={code}>CONTRACTS_NOT_DEPLOYED</code>.
+            <code className={code}>NOT_FOUND</code>, <code className={code}>RATE_LIMITED</code>, <code className={code}>TABLE_LIMIT</code>, <code className={code}>CONTRACTS_NOT_DEPLOYED</code>
+            {CHAIN_BACKED && (
+              <>
+                , and for intents whose precondition is not met on chain: <code className={code}>ROUND_NOT_OPEN</code>, <code className={code}>INSUFFICIENT_ESCROW</code>,{" "}
+                <code className={code}>NO_CHIPS</code>, <code className={code}>INSUFFICIENT_CHIPS</code>, <code className={code}>ASSET_UNAVAILABLE</code>,{" "}
+                <code className={code}>INSUFFICIENT_WIN_BALANCE</code>, <code className={code}>PAUSED</code>. <code className={code}>CHAIN_UNAVAILABLE</code> means the chain could not be read
+              </>
+            )}
+            .
           </p>
         </Section>
 
@@ -313,8 +347,14 @@ curl -s -X POST https://<host>/api/v1/verify \\
             </span>
           </div>
           <p>
-            {siteConfig.name} is an <strong>independent product built on Robinhood Chain</strong>. It is not affiliated with, endorsed by or operated by Robinhood. The API is in beta and served
-            from indexed data until the contracts deploy; intents return <code className={code}>CONTRACTS_NOT_DEPLOYED</code> with a full preview until then. Nothing on this page is an invitation
+            {siteConfig.name} is an <strong>independent product built on Robinhood Chain</strong>. It is not affiliated with, endorsed by or operated by Robinhood. {CHAIN_BACKED ? (
+              <>The API is in beta and reads the deployed contracts on {activeChain.name}; intents are checked against your wallet&apos;s onchain balances and are never signed here.</>
+            ) : (
+              <>
+                The API is in beta and served from indexed data until the contracts deploy; intents return <code className={code}>CONTRACTS_NOT_DEPLOYED</code> with a full preview until then.
+              </>
+            )}{" "}
+            Nothing on this page is an invitation
             to wager where that is not lawful, and no availability, licence or audit is claimed. Contracts are <strong>NOT YET AUDITED</strong>.
           </p>
           <p>

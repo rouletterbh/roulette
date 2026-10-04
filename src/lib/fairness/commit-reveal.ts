@@ -31,7 +31,8 @@ export function commit(serverSeed: Hex): Hex {
   return keccak256(serverSeed);
 }
 
-export function deriveResult(serverSeed: Hex, playerSeed: Hex, blockReference: Hex, roundId: number): number {
+/** `roundId` is hashed as a uint256, so chain round ids beyond 2^53 can be passed as bigint. */
+export function deriveResult(serverSeed: Hex, playerSeed: Hex, blockReference: Hex, roundId: number | bigint): number {
   const h = keccak256(concatHex([serverSeed, playerSeed, blockReference, toHex(BigInt(roundId), { size: 32 })]));
   return Number(hexToBigInt(h) % 37n);
 }

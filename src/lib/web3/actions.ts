@@ -215,12 +215,5 @@ export function claimAs(asset: Address, usd1e18: bigint, minOut: bigint, deadlin
   });
 }
 
-/** minOut for a quote with `slippageBps` tolerance. */
-export function withSlippage(amountOut: bigint, slippageBps = 50): bigint {
-  return (amountOut * BigInt(10_000 - slippageBps)) / 10_000n;
-}
-
-/** Unix-seconds deadline `minutes` from now. */
-export function deadlineIn(minutes = 10): bigint {
-  return BigInt(Math.floor(Date.now() / 1000) + minutes * 60);
-}
+// Pure claim maths live in ./claim-math so the server-side claim intent derives the same values.
+export { withSlippage, deadlineIn } from "./claim-math";

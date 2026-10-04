@@ -5,11 +5,16 @@ import { computeQuote, IntentBetInputSchema, QuoteError } from "@/lib/agent/quot
 import { encodeBetById } from "@/lib/agent/encode-bets";
 import { buildPlaceBetsIntent } from "@/lib/agent/intents";
 import { intentResponse } from "@/lib/agent/intent-response";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { getChainReader } from "@/lib/web3/server";
+import { ChainPlaceBetsBodySchema, chainPlaceBetsIntent } from "@/lib/agent/chain-api";
 
 export const dynamic = "force-dynamic";
 export { OPTIONS };
 
 const Body = z.object({
+  /** Ignored in demo mode; required when chain-backed. */
+  address: z.string().optional(),
   /** On-chain round id (must be Open). Accepts a number or a decimal string for large ids. */
   roundId: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/)]),
   bets: z.array(IntentBetInputSchema).min(1).max(64),
@@ -19,6 +24,11 @@ const Body = z.object({
 export async function POST(req: Request) {
   const limited = rateLimit(req, "intents");
   if (limited) return limited;
+  if (CHAIN_BACKED) {
+    const cb = await parseBody(req, ChainPlaceBetsBodySchema);
+    if ("response" in cb) return cb.response;
+    return chainPlaceBetsIntent(getChainReader(), cb.data);
+  }
   const body = await parseBody(req, Body);
   if ("response" in body) return body.response;
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getAddress, isAddress } from "viem";
 import { siteConfig } from "@/config/site";
 
 /**
@@ -19,7 +20,36 @@ export type ErrorCode =
   | "RATE_LIMITED"
   | "CONTRACTS_NOT_DEPLOYED"
   | "TABLE_LIMIT"
+  // Chain-backed preconditions (demo mode off): the read succeeded and the answer is "no".
+  | "ROUND_NOT_OPEN"
+  | "INSUFFICIENT_ESCROW"
+  | "NO_CHIPS"
+  | "INSUFFICIENT_CHIPS"
+  | "ASSET_UNAVAILABLE"
+  | "INSUFFICIENT_WIN_BALANCE"
+  | "PAUSED"
+  // The chain could not be read. Nothing is simulated in its place.
+  | "CHAIN_UNAVAILABLE"
   | "INTERNAL";
+
+/** Every error code the API can return (kept in sync with the OpenAPI enum by a test). */
+export const ERROR_CODES = [
+  "BAD_REQUEST",
+  "VALIDATION_ERROR",
+  "NOT_FOUND",
+  "RATE_LIMITED",
+  "CONTRACTS_NOT_DEPLOYED",
+  "TABLE_LIMIT",
+  "ROUND_NOT_OPEN",
+  "INSUFFICIENT_ESCROW",
+  "NO_CHIPS",
+  "INSUFFICIENT_CHIPS",
+  "ASSET_UNAVAILABLE",
+  "INSUFFICIENT_WIN_BALANCE",
+  "PAUSED",
+  "CHAIN_UNAVAILABLE",
+  "INTERNAL",
+] as const satisfies readonly ErrorCode[];
 
 export interface ApiError {
   code: ErrorCode;
@@ -74,7 +104,16 @@ function defaultStatus(code: ErrorCode) {
       return 429;
     case "CONTRACTS_NOT_DEPLOYED":
     case "TABLE_LIMIT":
+    case "ROUND_NOT_OPEN":
+    case "INSUFFICIENT_ESCROW":
+    case "NO_CHIPS":
+    case "INSUFFICIENT_CHIPS":
+    case "ASSET_UNAVAILABLE":
+    case "INSUFFICIENT_WIN_BALANCE":
+    case "PAUSED":
       return 409;
+    case "CHAIN_UNAVAILABLE":
+      return 503;
     default:
       return 500;
   }
@@ -115,3 +154,12 @@ export const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/, "Expected a 0x-prefixed 20-byte address")
   .transform((s) => s as `0x${string}`);
+
+/**
+ * A caller's wallet address: all-lowercase or correctly checksummed (a mixed-case
+ * address with a wrong checksum is rejected as a likely typo), returned EIP-55 checksummed.
+ */
+export const callerAddress = z
+  .string()
+  .refine((s) => isAddress(s), "Expected a 0x-prefixed 20-byte address (lowercase or EIP-55 checksummed)")
+  .transform((s) => getAddress(s));

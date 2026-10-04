@@ -18,6 +18,7 @@ import { cn, formatUsd, formatNumber, shortAddress, relativeTime } from "@/lib/u
 import { track, bucketAmount } from "@/lib/analytics/events";
 import { useChipBalances, useEscrow, useRewardStatus, useTreasurySnapshot, useWinBalance, useWithdrawable } from "@/lib/web3/hooks";
 import { claimAs, deadlineIn, deposit, quoteClaim, redeemAndWithdraw, withSlippage, withdraw } from "@/lib/web3/actions";
+import { CLAIM_DEADLINE_MINUTES, CLAIM_SLIPPAGE_BPS } from "@/lib/web3/claim-math";
 import { useTxFlow } from "@/lib/web3/use-tx-flow";
 import { PAUSE_FLAGS, contractAddresses } from "@/lib/web3/contracts";
 
@@ -28,7 +29,7 @@ import { PAUSE_FLAGS, contractAddresses } from "@/lib/web3/contracts";
  */
 const TABS = ["deposit", "chips", "claim", "withdraw"] as const;
 type Tab = (typeof TABS)[number];
-const SLIPPAGE_BPS = 50;
+const SLIPPAGE_BPS = CLAIM_SLIPPAGE_BPS;
 
 const fmtEth = (wei: bigint, digits = 6) => `${Number(formatEther(wei)).toFixed(digits).replace(/\.?0+$/, "")} ETH`;
 
@@ -123,7 +124,7 @@ export function ChainCashier() {
       summary: [["Amount", formatUsd(claimUsd)], ["Asset", chosen.token.symbol], ["Estimated", estimatedOut != null ? `${formatNumber(estimatedOut)} ${chosen.token.symbol}` : "quoted at claim"], ["Slippage tolerance", `${SLIPPAGE_BPS / 100}%`]],
       run: async (report) => {
         const q = await quoteClaim(chosenAddress, usd1e18);
-        return claimAs(chosenAddress, usd1e18, withSlippage(q.amountOut, SLIPPAGE_BPS), deadlineIn(10), report);
+        return claimAs(chosenAddress, usd1e18, withSlippage(q.amountOut, SLIPPAGE_BPS), deadlineIn(CLAIM_DEADLINE_MINUTES), report);
       },
       onSuccess: async (hash) => {
         record(`Claim ${chosen.token.symbol}`)(hash);

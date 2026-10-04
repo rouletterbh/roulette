@@ -1,8 +1,11 @@
 /**
  * Dataset catalog in the shape a data marketplace listing wants: one entry per
  * dataset with access path, cadence, field dictionary and licensing notes.
- * Everything is demo-backed until contracts deploy; `demo` says so per entry.
+ * Two catalogs: the simulated one (demo mode) and the chain-backed one served when
+ * NEXT_PUBLIC_DEMO_MODE=false; `demo` says which per entry.
  */
+import { CHAIN_BACKED } from "./mode";
+
 export interface DatasetField {
   name: string;
   type: "string" | "integer" | "number" | "boolean" | "hex32" | "address" | "timestamp-ms" | "enum" | "array" | "object";
@@ -33,7 +36,8 @@ export interface DatasetListing {
 
 const hex32: DatasetField["type"] = "hex32";
 
-export const datasetCatalog: readonly DatasetListing[] = [
+/** Catalog served while the API is on simulated data (demo mode). */
+export const demoDatasetCatalog: readonly DatasetListing[] = [
   {
     id: "rounds",
     title: "Settled rounds with fairness proofs",
@@ -202,3 +206,182 @@ export const datasetCatalog: readonly DatasetListing[] = [
     ],
   },
 ];
+
+/* ------------------------------------------------------------ chain-backed */
+
+const OPEN = "Open for read, attribution appreciated. Beta; schema may change before v1.1.";
+
+/**
+ * Catalog served when the API reads Robinhood Chain. Only datasets the chain can
+ * support are listed, and each says exactly which contract views or logs it comes from.
+ * Simulated-only fields (table names, player and spectator counts, speeds) are gone.
+ */
+export const chainDatasetCatalog: readonly DatasetListing[] = [
+  {
+    id: "rounds",
+    title: "Settled rounds with fairness proofs",
+    summary: "Rounds settled on chain with commitment, revealed seeds, block reference and result. Each row is independently verifiable with POST /api/v1/verify; any round id can also be read directly at /api/v1/rounds/{id}.",
+    endpoint: "/api/v1/rounds",
+    method: "GET",
+    refreshCadence: "Per settled round (the operator opens rounds only while a player is seated)",
+    suggestedPollSeconds: 30,
+    granularity: "One row per round",
+    history: "RoundSettled logs inside the scanned block window reported as scanWindow (default about 100 minutes of blocks); not all-time",
+    demo: false,
+    provenance: "RouletteGame.RoundSettled logs + RouletteGame.getRound + RandomnessManager.getRound on Robinhood Chain",
+    license: OPEN,
+    pagination: { style: "cursor", params: ["limit", "cursor"] },
+    filters: ["table"],
+    tags: ["roulette", "fairness", "commit-reveal", "robinhood-chain", "onchain"],
+    fields: [
+      { name: "roundId", type: "integer", description: "On-chain round id (uint256; a decimal string beyond 2^53). Part of the hash preimage." },
+      { name: "tableId", type: "string", description: "On-chain table id, e.g. \"1\"." },
+      { name: "status", type: "enum", enum: ["Open", "Closed", "Settled", "Voided"], description: "RouletteGame round status." },
+      { name: "openedAt", type: "integer", description: "Block timestamp of openRound, unix seconds." },
+      { name: "commitment", type: hex32, description: "keccak256(serverSeed), committed before the round opened." },
+      { name: "serverSeed", type: hex32, description: "Revealed after the round closes; null before." },
+      { name: "playerSeed", type: hex32, description: "Player entropy frozen at close; null while open." },
+      { name: "blockRef", type: hex32, description: "Block hash fixed at reveal; null before." },
+      { name: "result", type: "integer", description: "Winning pocket 0..36 = keccak256(serverSeed‖playerSeed‖blockRef‖roundId) mod 37; null unless Settled." },
+      { name: "color", type: "enum", enum: ["red", "black", "green"], description: "Pocket color." },
+      { name: "betCount", type: "integer", description: "Bets stored on chain for the round." },
+      { name: "totalStaked", type: "integer", description: "Chip units staked." },
+      { name: "totalReturned", type: "integer", description: "Chip units returned to players (stakes + profit)." },
+      { name: "verified", type: "boolean", description: "Seeds re-checked server-side against the commitment and result; null until revealed." },
+    ],
+  },
+  {
+    id: "stats",
+    title: "Outcome distribution",
+    summary: "Descriptive counts (color, parity, dozen, column, half, pocket histogram) and chip units staked/returned over rounds settled on chain inside the scanned block window. Neutral language only: every spin is independent.",
+    endpoint: "/api/v1/stats",
+    method: "GET",
+    refreshCadence: "Per settled round",
+    suggestedPollSeconds: 30,
+    granularity: "Aggregate over a window",
+    history: "Up to `window` most recent settled rounds inside blockWindow",
+    demo: false,
+    provenance: "RouletteGame.RoundSettled logs on Robinhood Chain",
+    license: "Open for read. Not a prediction signal.",
+    pagination: null,
+    filters: ["table", "window"],
+    tags: ["roulette", "statistics", "onchain"],
+    fields: [
+      { name: "sampled", type: "integer", description: "Settled rounds actually counted." },
+      { name: "totalStaked", type: "integer", description: "Chip units staked across the sampled rounds." },
+      { name: "totalReturned", type: "integer", description: "Chip units returned across the sampled rounds." },
+      { name: "blockWindow", type: "object", description: "{ fromBlock, toBlock, blocks, approxMinutes } the counts cover." },
+      { name: "color", type: "object", description: "{ red, black, green } counts." },
+      { name: "pockets", type: "array", description: "37-element histogram indexed by pocket." },
+      { name: "expected", type: "object", description: "Theoretical single-zero probabilities for reference." },
+    ],
+  },
+  {
+    id: "treasury",
+    title: "Treasury solvency snapshot",
+    summary: "Bankroll, reserved liabilities, claimable rewards, protocol and safety reserves, available bankroll, per-round exposure cap and collateralization, in chip units with wei and peg-derived USD alongside.",
+    endpoint: "/api/v1/treasury",
+    method: "GET",
+    refreshCadence: "Per deposit, wager, settlement or claim",
+    suggestedPollSeconds: 10,
+    granularity: "Point-in-time snapshot",
+    history: "Current state only",
+    demo: false,
+    provenance: "CasinoTreasury views (bankroll, reservedLiability, claimable, protocolReserve, safetyReserve, availableBankrollUnits, isSolvent) + RouletteGame.maxStakeFor on Robinhood Chain",
+    license: "Open for read.",
+    pagination: null,
+    tags: ["treasury", "solvency", "risk", "onchain"],
+    fields: [
+      { name: "snapshot.bankroll", type: "integer", description: "Assets held for payouts (chip units)." },
+      { name: "snapshot.reservedLiability", type: "integer", description: "Worst-case liability of in-flight rounds (chip units)." },
+      { name: "snapshot.escrow", type: "integer", description: "Chip units players hold in table escrow; 0 means nobody is seated." },
+      { name: "derived.availableBankroll", type: "integer", description: "bankroll − reserved − claimable − protocolReserve − safetyReserve." },
+      { name: "derived.maxRoundExposure", type: "integer", description: "floor(availableBankroll × maxRoundExposureBps / 10000)." },
+      { name: "derived.maxStraightStake", type: "integer", description: "Largest 35:1 stake accepted on an empty round right now." },
+      { name: "derived.isSolvent", type: "boolean", description: "CasinoTreasury.isSolvent()." },
+      { name: "usdAtPeg.*", type: "object", description: "The same buckets in USD at the chip peg (no ETH/USD price exists on chain)." },
+      { name: "wei.*", type: "object", description: "Raw wei buckets as decimal strings." },
+    ],
+  },
+  {
+    id: "tables",
+    title: "Tables, limits and the current round",
+    summary: "Every on-chain table with its stake range, treasury-backed effective limits, the round in flight (or null) and what the round operator is waiting for.",
+    endpoint: "/api/v1/tables",
+    method: "GET",
+    refreshCadence: "Per round transition",
+    suggestedPollSeconds: 4,
+    granularity: "One row per table",
+    history: "Current state; `recent` lists results settled inside the scanned block window",
+    demo: false,
+    provenance: "RouletteGame.tables / maxStakeFor / getRound + RoundOpened logs on Robinhood Chain",
+    license: "Open for read.",
+    pagination: null,
+    tags: ["tables", "limits", "onchain"],
+    fields: [
+      { name: "id", type: "string", description: "On-chain table id as a string, e.g. \"1\"." },
+      { name: "status", type: "enum", enum: ["live", "locked"], description: "locked when inactive, paused or the treasury cannot back a bet." },
+      { name: "limits.minBet", type: "integer", description: "Table minimum stake (chip units)." },
+      { name: "limits.maxBet", type: "integer", description: "Table maximum stake (chip units)." },
+      { name: "limits.maxOutside", type: "integer", description: "Effective cap for even-money bets right now." },
+      { name: "limits.maxStraight", type: "integer", description: "Effective cap for 35:1 bets right now." },
+      { name: "currentRound", type: "object", description: "{ id, status, openedAt, betCount, totalStaked, betsCloseAt (approximate) } or null when no round is in flight." },
+      { name: "operator", type: "enum", enum: ["round-open", "awaiting-reveal", "between-rounds", "waiting-for-players"], description: "What the round operator is doing, inferred from chain state." },
+      { name: "recent", type: "array", description: "Most recent settled results for the table, newest first." },
+    ],
+  },
+  {
+    id: "rewards",
+    title: "Reward vault inventory",
+    summary: "Assets registered on the reward vault with on-chain status, inventory in token units, the posted oracle price and its age. Registry entries the vault does not hold are listed as not yet listed.",
+    endpoint: "/api/v1/rewards",
+    method: "GET",
+    refreshCadence: "On inventory funding, claim or oracle post (about every 5 minutes)",
+    suggestedPollSeconds: 30,
+    granularity: "One row per asset",
+    history: "Current state only",
+    demo: false,
+    provenance: "RewardVault.assets / assetConfig / status / inventory / quote + PostedPriceOracle.getPrice on Robinhood Chain",
+    license: "Open for read. Stock Token availability is jurisdiction-gated.",
+    pagination: null,
+    tags: ["rewards", "stock-tokens", "inventory", "onchain"],
+    fields: [
+      { name: "id", type: "string", description: "Registry id, e.g. crypto-cashcat." },
+      { name: "symbol", type: "string", description: "Ticker symbol." },
+      { name: "contractAddress", type: "address", description: "Token contract, or null when not listed." },
+      { name: "vaultStatus", type: "enum", enum: ["AVAILABLE", "LOW", "UNAVAILABLE"], description: "RewardVault.status for the asset." },
+      { name: "inventory", type: "string", description: "Vault inventory in token base units." },
+      { name: "priceUsd", type: "number", description: "Fresh oracle price a claim would use; null when unset or stale." },
+      { name: "priceAgeSeconds", type: "integer", description: "Age of the posted price." },
+      { name: "priceStale", type: "boolean", description: "True when older than the asset's maxStalenessSeconds." },
+      { name: "minimumPayoutUsd", type: "number", description: "Smallest claim the vault accepts." },
+    ],
+  },
+  {
+    id: "prices",
+    title: "Posted oracle prices",
+    summary: "The USD price last posted to the on-chain oracle for every asset registered on the reward vault, with its timestamp, age and a staleness flag. No off-chain price feed is consulted.",
+    endpoint: "/api/v1/prices",
+    method: "GET",
+    refreshCadence: "Per oracle post (about every 5 minutes)",
+    suggestedPollSeconds: 60,
+    granularity: "One row per asset",
+    history: "Latest posted price only",
+    demo: false,
+    provenance: "PostedPriceOracle.getPrice + RewardVault.assetConfig.maxStaleness on Robinhood Chain",
+    license: "Open for read.",
+    pagination: null,
+    tags: ["prices", "oracle", "onchain"],
+    fields: [
+      { name: "symbol", type: "string", description: "Ticker symbol." },
+      { name: "contractAddress", type: "address", description: "Token contract." },
+      { name: "priceUsd", type: "number", description: "USD per whole token as posted." },
+      { name: "updatedAt", type: "integer", description: "Unix seconds of the post." },
+      { name: "ageSeconds", type: "integer", description: "Chain time minus updatedAt." },
+      { name: "stale", type: "boolean", description: "True when the vault would reject a claim on this price." },
+    ],
+  },
+  demoDatasetCatalog.find((d) => d.id === "fairness-proofs")!,
+];
+
+export const datasetCatalog: readonly DatasetListing[] = CHAIN_BACKED ? chainDatasetCatalog : demoDatasetCatalog;

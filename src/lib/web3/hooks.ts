@@ -438,6 +438,8 @@ export function useChainTables() {
     minBankrollToOpenUnits: h?.[3]?.status === "success" ? Number(h[3].result) : 0,
     isLoading: enabled && (head.isLoading || (count > 0 && rows.isLoading)),
     isFetched: head.isFetched && (count === 0 || rows.isFetched),
+    /** The table count could not be read (RPC trouble), as opposed to "the chain has no tables". */
+    readFailed: enabled && head.isFetched && h?.[0]?.status !== "success",
     error: (head.error as Error | null) ?? (rows.error as Error | null) ?? null,
   };
 }
@@ -575,7 +577,9 @@ export function useRewardInventoryAll() {
     });
     return m;
   }, [q.data]);
-  return { enabled, byAddress, isFetched: q.isFetched, isLoading: enabled && q.isLoading };
+  /** Every vault read failed (RPC trouble), as opposed to "the vault has no such asset". */
+  const readFailed = enabled && q.isFetched && (!q.data || q.data.every((r) => r.status !== "success"));
+  return { enabled, byAddress, isFetched: q.isFetched, isLoading: enabled && q.isLoading, readFailed };
 }
 
 const roundSettledEvent = getAbiItem({ abi: rouletteGameAbi, name: "RoundSettled" });

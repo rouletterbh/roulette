@@ -3,12 +3,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { getRewardInventory } from "@/lib/demo/rewards";
+import { siteConfig } from "@/config/site";
 
 /**
  * Collection: what an owner has walked away with. Agent (or human) wins are
  * settled into the owner's chosen asset where the vault holds inventory, else
  * the fallback, else they remain a win balance. Every acquisition keeps the
  * round it came from so provenance is one click away. DEMO: 1 chip = $1.
+ *
+ * With demo mode off nothing is converted automatically: a win stays a win balance
+ * until the owner claims it from the vault (a transaction they sign), so every
+ * acquisition is recorded as "win-balance" and valued at the treasury's chip peg.
  */
 export interface CollectionRule {
   primaryAssetId: string | null;
@@ -35,6 +40,9 @@ export interface Acquisition {
 interface CollectionState {
   acquisitions: Acquisition[];
   rules: Record<string, CollectionRule>;
+  /** USD per chip unit at the treasury peg (demo off only); set by AgentOptionsProvider once read from chain. */
+  liveChipUsd: number | null;
+  setLiveChipUsd: (usd: number) => void;
   setRule: (owner: string, rule: CollectionRule) => void;
   acquire: (input: { owner: string; agentId: string | null; agentName: string | null; roundId: number; result: number; chips: number; rule: CollectionRule }) => Acquisition;
 }
@@ -42,6 +50,8 @@ interface CollectionState {
 export const CHIP_USD_DEMO = 1;
 
 export function resolveAsset(rule: CollectionRule) {
+  // Demo off: no simulated inventory, and no automatic on-chain claim. The win stays a balance.
+  if (!siteConfig.demoMode) return null;
   const inv = getRewardInventory();
   const pick = (id: string | null) => {
     if (!id) return null;
@@ -56,24 +66,29 @@ export const useCollection = create<CollectionState>()(
     (set, get) => ({
       acquisitions: [],
       rules: {},
+      liveChipUsd: null,
+      setLiveChipUsd: (usd) => {
+        if (get().liveChipUsd !== usd) set({ liveChipUsd: usd });
+      },
       setRule: (owner, rule) => set({ rules: { ...get().rules, [owner]: rule } }),
       acquire: ({ owner, agentId, agentName, roundId, result, chips, rule }) => {
         const asset = resolveAsset(rule);
+        const chipUsd = siteConfig.demoMode ? CHIP_USD_DEMO : (get().liveChipUsd ?? 0);
         const a: Acquisition = {
           id: `acq-${Date.now().toString(36)}-${roundId}`,
           at: Date.now(),
           owner, agentId, agentName, roundId, result, chips,
-          usd: chips * CHIP_USD_DEMO,
+          usd: chips * chipUsd,
           assetId: asset?.token.id ?? null,
           symbol: asset?.token.symbol ?? "WIN",
-          qty: asset?.priceUsd ? (chips * CHIP_USD_DEMO) / asset.priceUsd : null,
+          qty: asset?.priceUsd ? (chips * chipUsd) / asset.priceUsd : null,
           status: asset ? "collected" : "win-balance",
         };
         set({ acquisitions: [a, ...get().acquisitions].slice(0, 500) });
         return a;
       },
     }),
-    { name: "collection" },
+    { name: "collection", partialize: (s) => ({ acquisitions: s.acquisitions, rules: s.rules }) },
   ),
 );
 

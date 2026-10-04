@@ -3,6 +3,9 @@ import { ok, OPTIONS, parseQuery } from "@/lib/agent/envelope";
 import { getMaximumSafeBet } from "@/lib/risk/engine";
 import { demoTreasury } from "@/lib/demo/data";
 import { PAYOUT } from "@/lib/roulette/bets";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { getChainReader } from "@/lib/web3/server";
+import { ChainLimitsQuery, chainLimits } from "@/lib/agent/chain-api";
 
 export const dynamic = "force-dynamic";
 export { OPTIONS };
@@ -15,6 +18,11 @@ const Query = z.object({
 });
 
 export async function GET(req: Request) {
+  if (CHAIN_BACKED) {
+    const cq = parseQuery(req, ChainLimitsQuery);
+    if ("response" in cq) return cq.response;
+    return chainLimits(getChainReader(), cq.data);
+  }
   const q = parseQuery(req, Query);
   if ("response" in q) return q.response;
   const r = getMaximumSafeBet(demoTreasury, q.data.multiplier, q.data.existingLiability);

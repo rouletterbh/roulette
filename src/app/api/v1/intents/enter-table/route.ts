@@ -4,11 +4,16 @@ import { rateLimit } from "@/lib/agent/rate-limit";
 import { buildEnterTableIntent } from "@/lib/agent/intents";
 import { intentResponse } from "@/lib/agent/intent-response";
 import { chipDenominations, type ChipDenomination } from "@/config/tokens";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { getChainReader } from "@/lib/web3/server";
+import { ChainEnterTableBodySchema, chainEnterTableIntent } from "@/lib/agent/chain-api";
 
 export const dynamic = "force-dynamic";
 export { OPTIONS };
 
 const Body = z.object({
+  /** Ignored in demo mode (no chain to check balances against); required when chain-backed. */
+  address: z.string().optional(),
   /** Chips to escrow, by denomination. Token id = 1000 + denomination. */
   chips: z
     .array(
@@ -27,6 +32,11 @@ const Body = z.object({
 export async function POST(req: Request) {
   const limited = rateLimit(req, "intents");
   if (limited) return limited;
+  if (CHAIN_BACKED) {
+    const cb = await parseBody(req, ChainEnterTableBodySchema);
+    if ("response" in cb) return cb.response;
+    return chainEnterTableIntent(getChainReader(), cb.data);
+  }
   const body = await parseBody(req, Body);
   if ("response" in body) return body.response;
   const built = buildEnterTableIntent(body.data.chips.map((c) => ({ denomination: c.denomination, count: c.count })));

@@ -5,12 +5,17 @@ import { rateLimit } from "@/lib/agent/rate-limit";
 import { buildClaimIntent } from "@/lib/agent/intents";
 import { intentResponse } from "@/lib/agent/intent-response";
 import { getRewardInventory } from "@/lib/demo/rewards";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { getChainReader } from "@/lib/web3/server";
+import { ChainClaimBodySchema, chainClaimIntent } from "@/lib/agent/chain-api";
 
 export const dynamic = "force-dynamic";
 export { OPTIONS };
 
 const Body = z
   .object({
+    /** Ignored in demo mode; required when chain-backed. */
+    address: z.string().optional(),
     /** Reward asset contract address (ERC-20), or a registry id such as "crypto-eth" when the asset has an address. */
     asset: z.union([address, z.string().regex(/^(crypto|stock)-[a-z0-9]+$/)]),
     /** USD amount of win balance to claim, as a decimal string or number (e.g. "12.50"). Encoded as 1e18 fixed point. */
@@ -25,6 +30,11 @@ const Body = z
 export async function POST(req: Request) {
   const limited = rateLimit(req, "intents");
   if (limited) return limited;
+  if (CHAIN_BACKED) {
+    const cb = await parseBody(req, ChainClaimBodySchema);
+    if ("response" in cb) return cb.response;
+    return chainClaimIntent(getChainReader(), cb.data);
+  }
   const body = await parseBody(req, Body);
   if ("response" in body) return body.response;
   const b = body.data;

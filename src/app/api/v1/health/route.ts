@@ -2,11 +2,15 @@ import { API_VERSION, DEMO, ok, OPTIONS } from "@/lib/agent/envelope";
 import { chainInfo } from "@/lib/agent/snapshot";
 import { deployedContracts } from "@/lib/agent/intents";
 import { siteConfig } from "@/config/site";
+import { CHAIN_BACKED } from "@/lib/agent/mode";
+import { getChainReader } from "@/lib/web3/server";
+import { chainHealth } from "@/lib/agent/chain-api";
 
 export const dynamic = "force-dynamic";
 export { OPTIONS };
 
 export async function GET() {
+  if (CHAIN_BACKED) return chainHealth(getChainReader());
   const contracts = deployedContracts();
   return ok(
     {

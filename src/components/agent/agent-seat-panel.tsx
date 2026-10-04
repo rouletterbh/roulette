@@ -10,12 +10,30 @@ import { OUTSIDE_BETS, straight, betFromId } from "@/lib/roulette/bets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, formatNumber } from "@/lib/utils";
-import { getRewardInventory } from "@/lib/demo/rewards";
+import { AgentOptionsProvider, useAgentOptions, vaultNote } from "./agent-options";
 import { useStable } from "@/store/stable";
 
 const QUICK_BETS = ["red", "black", "odd", "even", "low", "high", "dozen:1", "dozen:2", "dozen:3", "column:1", "column:2", "column:3"];
 
-export function AgentSeatPanel({ owner, tableId, balance, shared, practice, className }: { owner: string; tableId: string; balance: number; shared: boolean; practice?: boolean; className?: string }) {
+interface AgentSeatPanelProps {
+  owner: string;
+  tableId: string;
+  balance: number;
+  shared: boolean;
+  practice?: boolean;
+  className?: string;
+}
+
+/** Reward-asset choices come from the options provider: simulated in demo mode, the reward vault on chain otherwise. */
+export function AgentSeatPanel(props: AgentSeatPanelProps) {
+  return (
+    <AgentOptionsProvider>
+      <AgentSeatPanelInner {...props} />
+    </AgentOptionsProvider>
+  );
+}
+
+function AgentSeatPanelInner({ owner, tableId, balance, shared, practice, className }: AgentSeatPanelProps) {
   const seats = useAgentSeats((s) => s.seats);
   const seat = Object.values(seats).find((s) => s.owner === owner && s.tableId === tableId && s.status !== "stopped");
   const lastStopped = Object.values(seats).filter((s) => s.owner === owner && s.tableId === tableId && s.status === "stopped").sort((a, b) => b.createdAt - a.createdAt)[0];
@@ -108,7 +126,8 @@ function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: {
   const create = useAgentSeats((s) => s.create);
   const draft = useStable((s) => s.draft);
   const setDraft = useStable((s) => s.setDraft);
-  const inv = getRewardInventory();
+  const options = useAgentOptions();
+  const inv = options.assets;
   const draftIsStraight = !!draft && draft.betId.startsWith("straight:");
   const [name, setName] = useState(draft?.name ?? "");
   const [thesis, setThesis] = useState("");
@@ -122,7 +141,7 @@ function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: {
   const [stopWin, setStopWin] = useState<number | "">(draft?.stopWin ?? "");
   const [maxRounds, setMaxRounds] = useState(draft?.maxRounds ?? 20);
   const [timeLimit, setTimeLimit] = useState(draft?.timeLimitMinutes ?? 30);
-  const [primaryAsset, setPrimaryAsset] = useState<string>(inv.find((i) => i.status === "available")?.token.id ?? "");
+  const [primaryAsset, setPrimaryAsset] = useState<string>(inv.find((i) => i.status === "available")?.id ?? "");
   const [fallbackAsset, setFallbackAsset] = useState<string>("");
   const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -170,16 +189,19 @@ function AgentBuilder({ owner, tableId, balance, practice, onDone, onCancel }: {
             <label className={label} htmlFor="ag-collect">Collect wins as</label>
             <select id="ag-collect" value={primaryAsset} onChange={(e) => setPrimaryAsset(e.target.value)} className={field}>
               <option value="">Win balance (choose later)</option>
-              {inv.map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}
+              {inv.map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}
             </select>
           </div>
           <div>
             <label className={label} htmlFor="ag-fallback">Fallback</label>
             <select id="ag-fallback" value={fallbackAsset} onChange={(e) => setFallbackAsset(e.target.value)} className={field}>
               <option value="">Win balance</option>
-              {inv.filter((i) => i.token.id !== primaryAsset).map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}
+              {inv.filter((i) => i.id !== primaryAsset).map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}
             </select>
           </div>
+          {options.live && !inv.some((i) => i.selectable) && (
+            <p className="col-span-2 text-[12px] text-muted">{vaultNote(options)}</p>
+          )}
         </div>
       )}
       <p className="mt-3 rounded-lg bg-sunken px-3 py-2 text-[12px] text-muted dark:bg-surface">

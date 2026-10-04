@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { MeShell } from "@/components/account/me-shell";
 import { useCollection, summarize, type Acquisition } from "@/store/collection";
-import { getRewardInventory } from "@/lib/demo/rewards";
+import { AgentOptionsProvider, useAgentOptions, vaultNote } from "@/components/agent/agent-options";
 import { Button } from "@/components/ui/button";
 import { AgentCollectionEvent } from "@/components/agent/agent-collection-event";
 import { Figure, Reveal, TechSection, fmtStamp } from "@/components/agent/agent-page-kit";
@@ -13,7 +13,8 @@ import { cn, formatUsd, formatNumber } from "@/lib/utils";
 /* ------------------------------------------------------------------
    YOUR COLLECTION. Everything your agents walked away with, as a ledger:
    asset, source machine, round, date, value at settlement, status and
-   provenance. Values are what settled, not a projection. DEMO: 1 chip = $1.
+   provenance. Values are what settled, not a projection. Demo mode values a chip at $1;
+   with demo mode off the treasury's chip peg is used and assets come from the vault.
 ------------------------------------------------------------------ */
 
 type RowStatus = Acquisition["status"] | "claimed";
@@ -25,7 +26,11 @@ function statusLabel(s: RowStatus) {
 export function CollectionView() {
   return (
     <MeShell title="Everything your agents walked away with." eyebrow="Your collection" lede="Every win an agent (or you) settled into an asset, with the round it came from. Values are recorded at settlement; nothing here is a projection.">
-      {({ address }) => <CollectionBody owner={address} />}
+      {({ address }) => (
+        <AgentOptionsProvider>
+          <CollectionBody owner={address} />
+        </AgentOptionsProvider>
+      )}
     </MeShell>
   );
 }
@@ -37,7 +42,10 @@ function CollectionBody({ owner }: { owner: string }) {
   const acqs = all.filter((a) => a.owner === owner);
   const { holdings, totalUsd, diversity } = summarize(acqs);
   const sources = new Set(acqs.map((a) => a.agentId ?? "you")).size;
-  const inv = getRewardInventory();
+  const options = useAgentOptions();
+  const inv = options.assets;
+  const pegNote = !options.live ? "1 chip = $1" : options.chipUsd != null ? `at the chip peg · 1 chip = ${formatUsd(options.chipUsd)}` : "at the chip peg";
+  const noAssets = options.live && options.ready && !inv.some((i) => i.selectable);
   const rule = rules[owner] ?? { primaryAssetId: null, fallbackAssetId: null };
   const sel = "h-9 rounded-none border-b border-border-strong bg-transparent px-1 font-mono text-[12px] uppercase tracking-[0.06em] outline-none focus:border-ink";
   const hasWinBalance = holdings.some((h) => !h.assetId);
@@ -46,7 +54,7 @@ function CollectionBody({ owner }: { owner: string }) {
     <div className="space-y-14">
       {/* Summary strip */}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-8 border-y border-ink py-6 md:grid-cols-4">
-        <Figure label="Value at settlement" value={formatUsd(totalUsd)} note="1 chip = $1" />
+        <Figure label="Value at settlement" value={formatUsd(totalUsd)} note={pegNote} />
         <Figure label="Acquisitions" value={acqs.length} />
         <Figure label="Distinct assets" value={diversity} />
         <Figure label="Source agents" value={sources} />
@@ -56,13 +64,16 @@ function CollectionBody({ owner }: { owner: string }) {
       <Reveal>
         <TechSection index="01" title="Default collection rule" meta="Used by agents without their own">
           <div className="grid gap-6 md:grid-cols-12">
-            <p className="text-[13px] leading-relaxed text-muted md:col-span-5">Wins settle into the first asset the vault actually holds. Only assets with inventory can be chosen; otherwise the win remains a balance you can claim.</p>
+            <p className="text-[13px] leading-relaxed text-muted md:col-span-5">
+              Wins settle into the first asset the vault actually holds. Only assets with inventory can be chosen; otherwise the win remains a balance you can claim.
+              {options.live && (!options.ready || noAssets) && <span className="mt-2 block microlabel">{vaultNote(options)}</span>}
+            </p>
             <div className="flex flex-wrap items-end gap-x-8 gap-y-4 md:col-span-7">
               <label className="flex flex-col gap-1">
                 <span className="microlabel">Collect as</span>
                 <select value={rule.primaryAssetId ?? ""} onChange={(e) => setRule(owner, { ...rule, primaryAssetId: e.target.value || null })} className={sel}>
                   <option value="">Win balance</option>
-                  {inv.map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}
+                  {inv.map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}
                 </select>
               </label>
               <span className="microlabel pb-2.5">then</span>
@@ -70,7 +81,7 @@ function CollectionBody({ owner }: { owner: string }) {
                 <span className="microlabel">Fallback</span>
                 <select value={rule.fallbackAssetId ?? ""} onChange={(e) => setRule(owner, { ...rule, fallbackAssetId: e.target.value || null })} className={sel}>
                   <option value="">Win balance</option>
-                  {inv.map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}
+                  {inv.map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}
                 </select>
               </label>
             </div>

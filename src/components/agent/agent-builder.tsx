@@ -7,8 +7,8 @@ import { useStable } from "@/store/stable";
 import { useWallet } from "@/store/wallet";
 import { useChips } from "@/store/chips";
 import { useMounted } from "@/lib/hooks/use-mounted";
-import { getRewardInventory } from "@/lib/demo/rewards";
-import { demoTables } from "@/lib/demo/data";
+import { tableLabel } from "@/lib/agent/options";
+import { AgentOptionsProvider, useAgentOptions, vaultNote } from "./agent-options";
 import { OUTSIDE_BETS, straight, betFromId } from "@/lib/roulette/bets";
 import { agentCode, STRATEGY_CLASSES, type StrategyClass } from "@/lib/agent/states";
 import { AgentGlyph } from "./agent-glyph";
@@ -29,6 +29,14 @@ const SIDES = [["red", "red"], ["black", "black"], ["odd", "odd"], ["even", "eve
  * Sections: 01 Thesis · 02 Cadence · 03 Leash · 04 Collection · 05 Approve.
  */
 export function AgentBuilder() {
+  return (
+    <AgentOptionsProvider>
+      <AgentBuilderInner />
+    </AgentOptionsProvider>
+  );
+}
+
+function AgentBuilderInner() {
   const router = useRouter();
   const params = useSearchParams();
   const mounted = useMounted();
@@ -38,7 +46,8 @@ export function AgentBuilder() {
   const approve = useAgentSeats((s) => s.approve);
   const draft = useStable((s) => s.draft);
   const setDraft = useStable((s) => s.setDraft);
-  const inv = getRewardInventory();
+  const options = useAgentOptions();
+  const inv = options.assets;
 
   const tableParam = params.get("table") ?? "quick";
   const practice = tableParam === "practice";
@@ -64,7 +73,7 @@ export function AgentBuilder() {
   const [maxRounds, setMaxRounds] = useState(draft?.maxRounds ?? 60);
   const [timeLimit, setTimeLimit] = useState(draft?.timeLimitMinutes ?? 45);
   const [maxBet, setMaxBet] = useState(Math.max(stake, 4));
-  const [primaryAsset, setPrimaryAsset] = useState<string>(practice ? "" : (inv.find((i) => i.status === "available")?.token.id ?? ""));
+  const [primaryAsset, setPrimaryAsset] = useState<string>(practice ? "" : (inv.find((i) => i.status === "available")?.id ?? ""));
   const [fallbackAsset, setFallbackAsset] = useState<string>("");
   const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +93,7 @@ export function AgentBuilder() {
     ? `When the last ${cond.window} rounds show ${cond.min} or more ${cond.type === "zero-absent" ? "non-zero results" : SIDES.find(([k]) => k === cond.side)?.[1] ?? cond.side} results, place ${stake} chip${stake > 1 ? "s" : ""} on ${betLabel}.`
     : `Every ${cadence === "interval" ? `${interval} rounds` : cadence.replace("-", " ")}, place ${stake} chip${stake > 1 ? "s" : ""} on ${betLabel}.`;
 
-  const tableName = demoTables.find((t) => t.id === tableId)?.name ?? (tableId === "practice" ? "Practice table" : tableId === "quick" ? "Quick play" : tableId);
+  const tableName = tableLabel(tableId, options.tables, options.live);
   const tableHref = tableId === "practice" ? "/play/practice" : tableId === "quick" ? "/play/quick" : `/table/${tableId}`;
 
   const field = "h-9 w-full border-b border-border bg-transparent px-0 font-mono text-[13px] tnum outline-none focus:border-ink";
@@ -174,14 +183,15 @@ export function AgentBuilder() {
             <section className="space-y-4">
               {sectionHead("04", "Collection rule", "When winnings settle")}
               <div className="grid grid-cols-2 gap-4">
-                <div><label className={label} htmlFor="b-col">Claim into</label><select id="b-col" value={primaryAsset} onChange={(e) => setPrimaryAsset(e.target.value)} className={field}><option value="">Keep as chips / win balance</option>{inv.map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}</select></div>
-                <div><label className={label} htmlFor="b-fb">Fallback</label><select id="b-fb" value={fallbackAsset} onChange={(e) => setFallbackAsset(e.target.value)} className={field}><option value="">Win balance</option>{inv.filter((i) => i.token.id !== primaryAsset).map((i) => <option key={i.token.id} value={i.token.id} disabled={i.status !== "available" && i.status !== "low"}>{i.token.symbol} · {i.statusLabel}</option>)}</select></div>
+                <div><label className={label} htmlFor="b-col">Claim into</label><select id="b-col" value={primaryAsset} onChange={(e) => setPrimaryAsset(e.target.value)} className={field}><option value="">Keep as chips / win balance</option>{inv.map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}</select></div>
+                <div><label className={label} htmlFor="b-fb">Fallback</label><select id="b-fb" value={fallbackAsset} onChange={(e) => setFallbackAsset(e.target.value)} className={field}><option value="">Win balance</option>{inv.filter((i) => i.id !== primaryAsset).map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}</select></div>
               </div>
               <p className="microlabel">Stock Token inventory appears here only where the vault holds it and your jurisdiction is enabled.</p>
+              {options.live && !inv.some((i) => i.selectable) && <p className="microlabel">{vaultNote(options)}</p>}
             </section>
           )}
           <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--ink)]" />Public profile · others can follow and read the thesis and log</label>
-          <div><label className={label} htmlFor="b-table">Table</label><select id="b-table" value={tableId} onChange={(e) => setTableId(e.target.value)} className={field}><option value="quick">Quick play (solo)</option>{demoTables.filter((t) => t.status === "live").map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}<option value="practice">Practice (no value)</option></select></div>
+          <div><label className={label} htmlFor="b-table">Table</label><select id="b-table" value={tableId} onChange={(e) => setTableId(e.target.value)} className={field}>{options.tables.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}{!options.tables.some((t) => t.id === tableId) && tableId !== "practice" && <option value={tableId} disabled={options.live && options.ready}>{options.live ? (options.tablesUnreadable ? "Tables could not be read" : options.ready ? "No onchain table is active" : "Reading tables…") : tableName}</option>}<option value="practice">Practice (no value)</option></select>{options.live && options.ready && options.tables.length === 0 && <p className="mt-1.5 microlabel">{options.tablesUnreadable ? "Robinhood Chain could not be read just now, so tables are not listed. Retrying." : "No table is active onchain right now."} Practice is always available.</p>}</div>
         </div>
 
         {/* CENTER — live strategy preview */}
