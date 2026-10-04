@@ -82,7 +82,7 @@ const idleGapMs = Number(process.env.IDLE_GAP_SECONDS ?? 60) * 1000;
 const seatedOnly = (process.env.SEATED_ONLY ?? "true") !== "false";
 const seatPollMs = Number(process.env.SEAT_POLL_MS ?? 5000);
 const scanFromBlock = process.env.SCAN_FROM_BLOCK ? BigInt(process.env.SCAN_FROM_BLOCK) : null;
-const scanChunk = BigInt(process.env.SCAN_CHUNK_BLOCKS ?? 5000);
+const scanChunk = BigInt(process.env.SCAN_CHUNK_BLOCKS ?? 50_000);
 const emptyPolicy = (process.env.EMPTY_ROUND_POLICY ?? "cancel") as "cancel" | "settle";
 const maxRounds = Number(roundsArg ?? process.env.MAX_ROUNDS ?? 0);
 const pollMs = Number(process.env.POLL_MS ?? 1000);
@@ -288,14 +288,30 @@ async function refreshSeats(): Promise<Address[]> {
     if (scanFromBlock == null) log("warn", "seats.scanWindow", { fromBlock: from, note: "SCAN_FROM_BLOCK unset: players who entered earlier are only seen when they deposit again" });
   }
   const known = new Set(seats.players.map((a) => a.toLowerCase() as Address));
+  // Chunked scan. The range halves when the RPC rejects it, and progress is persisted per chunk so a restart
+  // (or a failure late in a long first scan) resumes where it stopped instead of starting over.
+  let chunk = scanChunk;
   while (from <= latest) {
-    const to = from + scanChunk - 1n < latest ? from + scanChunk - 1n : latest;
-    const logs = await pub.getLogs({ address: gameAddress, event: escrowDepositedEvent, fromBlock: from, toBlock: to });
+    const to = from + chunk - 1n < latest ? from + chunk - 1n : latest;
+    let logs;
+    try {
+      logs = await pub.getLogs({ address: gameAddress, event: escrowDepositedEvent, fromBlock: from, toBlock: to });
+    } catch (e) {
+      if (chunk <= 1000n) throw e;
+      chunk = chunk / 2n;
+      log("warn", "seats.scanChunkReduced", { chunkBlocks: chunk, ...describeError(e) });
+      continue;
+    }
     for (const l of logs) {
       const player = (l.args as { player?: Address }).player;
       if (player) known.add(player.toLowerCase() as Address);
     }
     from = to + 1n;
+    if (to < latest) {
+      seats.players = [...known];
+      seats.lastScannedBlock = to.toString();
+      if (!dry) atomicWrite(seatsFile, json(seats));
+    }
   }
   const seated: Address[] = [];
   for (const player of known) {

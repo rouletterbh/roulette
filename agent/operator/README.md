@@ -83,7 +83,7 @@ still runs its course), exit 0. Second SIGINT: exit immediately; state is on dis
 | `SEATED_ONLY` | `true` | open rounds only while at least one player has chips in escrow (`EscrowDeposited` logs re-checked against `escrow(player)`); otherwise just watch, sending nothing |
 | `SEAT_POLL_MS` | `5000` | how often to re-check seats while waiting |
 | `SCAN_FROM_BLOCK` | latest − 50000 | first block to scan for `EscrowDeposited` on the first start (mainnet: the RouletteGame deployment block 78563886); progress is persisted in `state/seats.json` |
-| `SCAN_CHUNK_BLOCKS` | `5000` | `eth_getLogs` range per request |
+| `SCAN_CHUNK_BLOCKS` | `50000` | `eth_getLogs` range per request (halves automatically if the RPC rejects it; progress is saved per chunk) |
 | `ROUND_GAP_SECONDS` | `3` | pause between rounds on a table |
 | `IDLE_GAP_SECONDS` | `60` | cap on the pause after empty rounds (doubles per empty round from `ROUND_GAP_SECONDS`, resets on the first round with bets) |
 | `EMPTY_ROUND_POLICY` | `cancel` | `cancel` or `settle`, see above |
