@@ -13,20 +13,42 @@ import { AgentLog } from "./agent-log";
 import { describeRules } from "@/store/agent-seat";
 import { Button } from "@/components/ui/button";
 import { cn, formatNumber } from "@/lib/utils";
+import { siteConfig } from "@/config/site";
+import { runnerPhaseState } from "@/lib/agent/states";
+import { formatEth } from "@/lib/agent-wallet/gas";
+import { kickAgentRunners, requestAgentSweep } from "@/lib/agent-wallet/manager";
+import { ChainAgentHost, useAgentLiveFor } from "./chain-agent";
 
 /**
  * Global agent dock: compact floating bar (desktop, bottom-right) or bottom
  * sheet (mobile) for the user's running agent. Expands to table, thesis, latest
  * action, remaining allowance, pause/stop. Hidden when no agent exists.
+ *
+ * With demo mode off it also hosts the on-chain agent runners (ChainAgentHost): the
+ * dock is mounted on every page, so an approved agent keeps playing while the owner
+ * browses the site, and stops when the tab closes.
  */
 export function AgentDock() {
+  return (
+    <>
+      {!siteConfig.demoMode && <ChainAgentHost />}
+      <AgentDockInner />
+    </>
+  );
+}
+
+function AgentDockInner() {
   const mounted = useMounted();
-  const { seat, state } = useMyAgent();
+  const { seat, state: seatUiState } = useMyAgent();
+  const live = useAgentLiveFor(seat?.chain ? seat.id : undefined);
   const open = useDock((s) => s.open);
   const setOpen = useDock((s) => s.setOpen);
   const actions = useAgentSeats();
   const reduce = useReducedMotion();
   if (!mounted || !seat) return null;
+  // An on-chain seat shows what its runner is doing; a simulated seat keeps its own state.
+  const onChain = !!seat.chain;
+  const state = onChain && live && seat.status !== "pending-approval" ? runnerPhaseState(live.phase) : seatUiState;
   const leash = seatLeash(seat);
   const last = [...seat.log].reverse().find((l) => l.kind === "bet" || l.kind === "result" || l.kind === "skip" || l.kind === "stopped");
   const rules = describeRules(seat.rules);
@@ -79,6 +101,19 @@ export function AgentDock() {
               <div className="microlabel">Latest action</div>
               <p className="mt-1 font-mono text-[12px] text-ink-2">{last?.text ?? "No decisions yet."}</p>
             </div>
+            {onChain && (
+              <div className="mt-4 border-t border-hairline pt-3">
+                <div className="microlabel">Agent wallet</div>
+                <p className="mt-1 text-[12.5px] text-ink-2" aria-live="polite">{live?.elsewhere ? "Run by another tab of this browser." : live?.note || "Reading the agent wallet from Robinhood Chain…"}</p>
+                {live?.error && <p className="mt-1 text-[12px] text-casino-red" role="alert">{live.error}</p>}
+                {live?.snapshot && (
+                  <p className="mt-1 font-mono text-[11.5px] tnum text-muted">
+                    wallet {formatNumber(live.snapshot.chipUnits)} · escrow {formatNumber(Number(live.snapshot.escrow))} · gas {formatEth(live.snapshot.eth)} ETH
+                  </p>
+                )}
+                <p className="mt-1 microlabel">Runs only while this site is open in a tab</p>
+              </div>
+            )}
             <div className="mt-4 border-t border-hairline pt-3">
               <AgentLeash usage={leash} size={120} triggered={seat.status === "stopped" ? seat.stoppedReason : null} />
             </div>
@@ -86,9 +121,10 @@ export function AgentDock() {
             <AgentLog items={seat.log} max={4} className="mt-4 border-t border-hairline pt-3" />
             <div className="mt-4 flex items-center gap-2">
               {seat.status === "active" && <Button size="sm" variant="outline" onClick={() => actions.pause(seat.id)}>Pause</Button>}
-              {seat.status === "paused" && <Button size="sm" variant="outline" onClick={() => actions.resume(seat.id)}>Resume</Button>}
+              {seat.status === "paused" && <Button size="sm" variant="outline" onClick={() => { actions.resume(seat.id); if (onChain) kickAgentRunners(); }}>Resume</Button>}
               {seat.status === "pending-approval" && <Button size="sm" variant="accent" href={tableHref}>Approve at table</Button>}
-              {seat.status !== "pending-approval" && <Button size="sm" variant="ghost" onClick={() => actions.stop(seat.id, "Stopped by owner.")}>Stop</Button>}
+              {seat.status !== "pending-approval" && <Button size="sm" variant="ghost" onClick={() => { actions.stop(seat.id, "Stopped by owner."); if (onChain) kickAgentRunners(); }}>{onChain ? "Stop and return funds" : "Stop"}</Button>}
+              {onChain && seat.status === "pending-approval" && <Button size="sm" variant="ghost" onClick={() => requestAgentSweep(seat.id)}>Sweep</Button>}
               <Link href={`/agent/${seat.id}`} className="ml-auto microlabel !text-ink hover:underline">Profile</Link>
             </div>
           </motion.aside>

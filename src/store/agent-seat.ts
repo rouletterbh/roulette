@@ -49,7 +49,7 @@ export interface AgentRules {
   timeLimitMinutes: number;
 }
 
-export type AgentLogKind = "created" | "approved" | "bet" | "skip" | "result" | "paused" | "resumed" | "stopped";
+export type AgentLogKind = "created" | "approved" | "bet" | "skip" | "result" | "paused" | "resumed" | "stopped" | "chain";
 export interface AgentLogItem {
   id: string;
   at: number;
@@ -57,6 +57,28 @@ export interface AgentLogItem {
   text: string;
   delta?: number;
 }
+
+/**
+ * Chain-mode seats only: the agent's burner wallet and the bookkeeping the on-chain
+ * runner needs to resume after a reload. Only the ADDRESS is kept here. The private
+ * key lives in its own storage entry (src/lib/agent-wallet/keystore.ts) and must
+ * never be copied into this record.
+ */
+export interface SeatChainState {
+  address: `0x${string}`;
+  /** When the owner's funding transactions confirmed. */
+  fundedAt: number | null;
+  /** A bet sent (or being sent) for a round that has not been booked yet. Written BEFORE the transaction is broadcast. */
+  pending: { roundId: number; wager: number; tx: string | null; sentAt: number } | null;
+  /** Set when the exit sequence left nothing at the agent address. */
+  sweptAt: number | null;
+}
+
+/** How a round the agent bet on ended, as read from chain. */
+export type ChainBetOutcome =
+  | { kind: "settled"; result: number; staked: number; returned: number }
+  | { kind: "voided"; staked: number }
+  | { kind: "missed"; why: string };
 
 export interface AgentSeat {
   id: string;
@@ -86,6 +108,8 @@ export interface AgentSeat {
   decisions: number;
   skips: number;
   followers: number;
+  /** Present only for seats that play on chain through a burner wallet. */
+  chain?: SeatChainState;
 }
 
 export const AGENT_CAPS = {
@@ -110,13 +134,25 @@ interface AgentSeatState {
   recordSkip: (id: string, roundId: number, why: string) => void;
   recordResult: (id: string, roundId: number, result: number, delta: number) => void;
   activeFor: (owner: string, tableId: string) => AgentSeat | undefined;
+  /* ---- chain-mode seats (burner wallet). The simulated path never calls these. ---- */
+  attachWallet: (id: string, address: `0x${string}`) => void;
+  markFunded: (id: string) => void;
+  /** A line in the seat log for a wallet/chain event (approval, escrow, sweep, errors). */
+  chainNote: (id: string, text: string) => void;
+  /** Persist the intent to bet on `roundId` before anything is broadcast: the round can never be bet twice. */
+  beginChainBet: (id: string, roundId: number, bets: AgentBet[], trace: DecisionTrace) => void;
+  /** A bet found on chain that this record did not know about (the tab closed mid-send). */
+  adoptChainBet: (id: string, roundId: number, wager: number, trace: DecisionTrace) => void;
+  setChainBetTx: (id: string, roundId: number, tx: string) => void;
+  resolveChainBet: (id: string, roundId: number, outcome: ChainBetOutcome) => void;
+  markSwept: (id: string, at: number | null) => void;
 }
 
 let n = 0;
 const lid = () => `${Date.now().toString(36)}-${(n++).toString(36)}`;
 const log = (kind: AgentLogKind, text: string, delta?: number): AgentLogItem => ({ id: lid(), at: Date.now(), kind, text, delta });
 
-export function validateRules(rules: AgentRules, allowance: number, balance: number): string | null {
+export function validateRules(rules: AgentRules, allowance: number, balance: number, where = "at the table"): string | null {
   if (rules.bets.length === 0) return "Add at least one bet.";
   if (rules.bets.length > AGENT_CAPS.maxBetsPerRound) return `At most ${AGENT_CAPS.maxBetsPerRound} bets per round.`;
   for (const b of rules.bets) {
@@ -125,7 +161,7 @@ export function validateRules(rules: AgentRules, allowance: number, balance: num
   }
   const perRound = rules.bets.reduce((s, b) => s + b.stake, 0);
   if (!(allowance > 0)) return "Set a chip allowance.";
-  if (allowance > balance * AGENT_CAPS.allowanceShareOfBalance) return `Allowance may not exceed ${AGENT_CAPS.allowanceShareOfBalance * 100}% of your chips at the table.`;
+  if (allowance > balance * AGENT_CAPS.allowanceShareOfBalance) return `Allowance may not exceed ${AGENT_CAPS.allowanceShareOfBalance * 100}% of your chips ${where}.`;
   if (perRound > allowance) return "One round of bets exceeds the allowance.";
   if (!(rules.stopLoss > 0)) return "A stop-loss is required.";
   if (rules.stopLoss > allowance) return "Stop-loss can't exceed the allowance.";
@@ -134,6 +170,22 @@ export function validateRules(rules: AgentRules, allowance: number, balance: num
   if (!(rules.maxRounds >= 1 && rules.maxRounds <= AGENT_CAPS.maxRounds)) return `Rounds must be 1–${AGENT_CAPS.maxRounds}.`;
   if (!(rules.timeLimitMinutes >= 1 && rules.timeLimitMinutes <= AGENT_CAPS.maxTimeMinutes)) return `Time limit must be 1–${AGENT_CAPS.maxTimeMinutes} minutes.`;
   return null;
+}
+
+/**
+ * Leash arithmetic shared by the simulated driver and the on-chain runner: the most the
+ * agent may wager this round is the smallest of the round's exposure cap, its own
+ * maximum bet and what is left of the allowance.
+ */
+export function leashCheck(seat: AgentSeat, maxRoundExposure: number): { maxAllowed: number; wager: number; ok: boolean } {
+  const maxAllowed = Math.max(0, Math.min(Math.floor(maxRoundExposure), seat.rules.maxBet ?? Infinity, seat.allowance + Math.min(0, seat.net)));
+  const wager = seat.rules.bets.reduce((a, b) => a + b.stake, 0);
+  return { maxAllowed, wager, ok: wager <= maxAllowed };
+}
+
+/** Short label for a decision trace: "BET RED + 17". */
+export function betDecisionLabel(bets: AgentBet[]) {
+  return `BET ${bets.map((b) => b.betId.toUpperCase().replace("STRAIGHT:", "")).join(" + ")}`;
 }
 
 /** Decide whether the agent should bet this round, and why not if not. */
@@ -192,6 +244,63 @@ export const useAgentSeats = create<AgentSeatState>()(
           log: [...s.log, log("result", `Round #${roundId}: ${result} → ${delta >= 0 ? "+" : ""}${delta}`, delta)].slice(-200),
         })),
       activeFor: (owner, tableId) => Object.values(get().seats).find((s) => s.owner === owner && s.tableId === tableId && s.status !== "stopped"),
+
+      attachWallet: (id, address) => patch(set, get, id, (s) => (s.chain?.address === address ? {} : { chain: { address, fundedAt: null, pending: null, sweptAt: null }, log: [...s.log, log("chain", `Agent wallet ${address.slice(0, 6)}…${address.slice(-4)} created in this browser.`)].slice(-200) })),
+      markFunded: (id) => patch(set, get, id, (s) => (s.chain ? { chain: { ...s.chain, fundedAt: Date.now(), sweptAt: null }, log: [...s.log, log("chain", `Funded by owner: ${s.allowance} chips and a gas float.`)].slice(-200) } : {})),
+      chainNote: (id, text) => patch(set, get, id, (s) => (s.log[s.log.length - 1]?.text === text ? {} : { log: [...s.log, log("chain", text)].slice(-200) })),
+      beginChainBet: (id, roundId, bets, trace) =>
+        patch(set, get, id, (s) =>
+          !s.chain
+            ? {}
+            : {
+                lastRoundId: roundId,
+                decisions: s.decisions + 1,
+                chain: { ...s.chain, pending: { roundId, wager: bets.reduce((a, b) => a + b.stake, 0), tx: null, sentAt: Date.now() } },
+                traces: [...s.traces, trace].slice(-200),
+                log: [...s.log, log("bet", `Round #${roundId}: ${bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ")}`)].slice(-200),
+              },
+        ),
+      adoptChainBet: (id, roundId, wager, trace) =>
+        patch(set, get, id, (s) =>
+          !s.chain
+            ? {}
+            : {
+                lastRoundId: roundId,
+                decisions: s.decisions + 1,
+                chain: { ...s.chain, pending: { roundId, wager, tx: null, sentAt: Date.now() } },
+                traces: [...s.traces, trace].slice(-200),
+                log: [...s.log, log("bet", `Round #${roundId}: ${wager} chips already placed on chain (found after a reload)`)].slice(-200),
+              },
+        ),
+      setChainBetTx: (id, roundId, tx) =>
+        patch(set, get, id, (s) =>
+          !s.chain?.pending || s.chain.pending.roundId !== roundId
+            ? {}
+            : { chain: { ...s.chain, pending: { ...s.chain.pending, tx } }, traces: s.traces.map((t) => (t.roundId === roundId && t.tx == null && t.decision !== "SKIP" ? { ...t, tx } : t)) },
+        ),
+      resolveChainBet: (id, roundId, outcome) =>
+        patch(set, get, id, (s) => {
+          if (!s.chain?.pending || s.chain.pending.roundId !== roundId) return {};
+          const chain = { ...s.chain, pending: null };
+          const last = s.traces.findLast((t) => t.roundId === roundId && t.decision !== "SKIP");
+          const mark = (p: Partial<DecisionTrace>) => s.traces.map((t) => (t === last ? { ...t, ...p } : t));
+          if (outcome.kind === "settled") {
+            const delta = outcome.returned - outcome.staked;
+            return {
+              chain,
+              roundsPlayed: s.roundsPlayed + 1,
+              net: s.net + delta,
+              lastOutcomeWasLoss: delta < 0,
+              traces: mark({ result: `${outcome.result === 0 ? "GREEN" : colorOf(outcome.result).toUpperCase()} ${outcome.result}`, outcome: delta }),
+              log: [...s.log, log("result", `Round #${roundId}: ${outcome.result} → ${delta >= 0 ? "+" : ""}${delta}`, delta)].slice(-200),
+            };
+          }
+          if (outcome.kind === "voided") {
+            return { chain, traces: mark({ result: "VOIDED · stake refunded", outcome: 0 }), log: [...s.log, log("skip", `Round #${roundId}: voided on chain, ${outcome.staked} chips refunded to escrow`)].slice(-200) };
+          }
+          return { chain, traces: mark({ result: "NOT INCLUDED", outcome: null, leashNote: outcome.why }), log: [...s.log, log("skip", `Round #${roundId}: missed (${outcome.why})`)].slice(-200) };
+        }),
+      markSwept: (id, at) => patch(set, get, id, (s) => (s.chain && s.chain.sweptAt !== at ? { chain: { ...s.chain, sweptAt: at } } : {})),
     }),
     {
       name: "agent-seats",
@@ -212,7 +321,9 @@ export const useAgentSeats = create<AgentSeatState>()(
 function patch(set: (p: Partial<AgentSeatState>) => void, get: () => AgentSeatState, id: string, fn: (s: AgentSeat) => Partial<AgentSeat>) {
   const s = get().seats[id];
   if (!s) return;
-  set({ seats: { ...get().seats, [id]: { ...s, ...fn(s) } } });
+  const change = fn(s);
+  if (Object.keys(change).length === 0) return; // nothing to write: keep the record (and every subscriber) untouched
+  set({ seats: { ...get().seats, [id]: { ...s, ...change } } });
 }
 
 /** Encode recent results as a compact input string, newest first: "R B R R B". */

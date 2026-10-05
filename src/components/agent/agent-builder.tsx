@@ -19,6 +19,13 @@ import { WalletButton } from "@/components/layout/wallet-button";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { cn, formatNumber } from "@/lib/utils";
+import type { Address } from "viem";
+import { siteConfig } from "@/config/site";
+import { useChipBalances } from "@/lib/web3/hooks";
+import { selectChips, type ChipBalances } from "@/lib/web3/contracts";
+import { TransactionModal } from "@/components/cashier/transaction-modal";
+import { ApprovalTerms } from "./agent-seat-panel";
+import { useAgentFunding, useAgentGasPrice } from "./chain-agent";
 
 const QUICK_BETS = ["red", "black", "odd", "even", "low", "high", "dozen:1", "dozen:2", "dozen:3", "column:1", "column:2", "column:3"];
 const SIDES = [["red", "red"], ["black", "black"], ["odd", "odd"], ["even", "even"], ["low", "1–18"], ["high", "19–36"]] as const;
@@ -29,14 +36,20 @@ const SIDES = [["red", "red"], ["black", "black"], ["odd", "odd"], ["even", "eve
  * Sections: 01 Thesis · 02 Cadence · 03 Leash · 04 Collection · 05 Approve.
  */
 export function AgentBuilder() {
-  return (
-    <AgentOptionsProvider>
-      <AgentBuilderInner />
-    </AgentOptionsProvider>
-  );
+  return <AgentOptionsProvider>{siteConfig.demoMode ? <AgentBuilderInner walletChips={null} /> : <ChainBuilder />}</AgentOptionsProvider>;
 }
 
-function AgentBuilderInner() {
+/** Demo mode off: the allowance is funded from the chips in the owner's wallet, read from chain. */
+function ChainBuilder() {
+  const address = useWallet((s) => s.address);
+  const chips = useChipBalances(address as Address | null);
+  const ready = chips.enabled && !chips.isLoading;
+  // The form's starting allowance is derived from the wallet's chips, so wait for the first read.
+  if (address && !ready) return <div className="container-edge py-24" aria-busy="true" />;
+  return <AgentBuilderInner walletChips={{ units: chips.units, balances: chips.balances, ready }} />;
+}
+
+function AgentBuilderInner({ walletChips }: { walletChips: { units: number; balances: ChipBalances; ready: boolean } | null }) {
   const router = useRouter();
   const params = useSearchParams();
   const mounted = useMounted();
@@ -50,15 +63,21 @@ function AgentBuilderInner() {
   const inv = options.assets;
 
   const tableParam = params.get("table") ?? "quick";
-  const practice = tableParam === "practice";
-  const balance = practice ? 1000 : chipsBalance;
+  const [tableId, setTableId] = useState(tableParam);
+  // With demo mode off the selected table decides the mode: a practice agent is simulated, every other
+  // agent plays on chain from its own wallet, funded from the owner's wallet chips. (Demo mode keeps
+  // deciding from the URL, as before.)
+  const practice = walletChips ? tableId === "practice" : tableParam === "practice";
+  const onChain = !!walletChips && !practice;
+  const balance = practice ? 1000 : walletChips ? walletChips.units : chipsBalance;
+  const funding = useAgentFunding();
+  const gasPrice = useAgentGasPrice();
   const owner = practice ? "practice" : wallet.address ?? "";
 
   const draftIsStraight = !!draft && draft.betId.startsWith("straight:");
   const [name, setName] = useState(draft?.name ?? "");
   const [thesis, setThesis] = useState("");
   const [strategyClass, setStrategyClass] = useState<StrategyClass>("Adaptive Low Variance");
-  const [tableId, setTableId] = useState(tableParam);
   const [condOn, setCondOn] = useState(true);
   const [cond, setCond] = useState<AgentCondition>({ type: "color-count", side: "red", window: 5, min: 3 });
   const [betId, setBetId] = useState(draft ? (draftIsStraight ? "straight" : draft.betId) : "black");
@@ -84,7 +103,11 @@ function AgentBuilderInner() {
     () => ({ bets: [{ betId: resolvedBet, stake }], cadence: condOn ? "after-condition" : cadence, interval, condition: condOn ? cond : null, maxBet, maxRounds, stopLoss, stopWin: stopWin === "" ? null : Number(stopWin), timeLimitMinutes: timeLimit }),
     [resolvedBet, stake, condOn, cadence, interval, cond, maxBet, maxRounds, stopLoss, stopWin, timeLimit],
   );
-  const liveError = validateRules(rules, allowance, balance) ?? (maxBet < stake ? "Maximum bet must cover the stake." : null);
+  const denominations = onChain && walletChips ? selectChips(walletChips.balances, allowance) : null;
+  const liveError =
+    validateRules(rules, allowance, balance, onChain ? "in your wallet" : undefined) ??
+    (maxBet < stake ? "Maximum bet must cover the stake." : null) ??
+    (denominations && !denominations.exact ? `Your wallet's chip denominations can make ${denominations.units} chips, not ${allowance}. Change the allowance.` : null);
   const view = useMemo(() => describeRules(rules), [rules]);
   const expectedLoss = (stake * maxRounds) / 37;
   const code = agentCode(name || "draft");
@@ -117,9 +140,14 @@ function AgentBuilderInner() {
   const onApprove = () => {
     const r = create({ name, thesis: thesis || sentence, strategyClass, collection: { primaryAssetId: primaryAsset || null, fallbackAssetId: fallbackAsset || null }, owner, tableId, rules, allowance, isPublic });
     if (!r.ok) { setError(r.error); return; }
-    approve(r.id);
     setDraft(null);
     setCreated(r.id);
+    if (onChain) {
+      // Approval is the funding step: the agent goes live only once its wallet holds the allowance and gas.
+      void funding.start(r.id, () => router.push(tableHref));
+      return;
+    }
+    approve(r.id);
     router.push(tableHref);
   };
 
@@ -133,7 +161,7 @@ function AgentBuilderInner() {
             <h1 className="font-display text-display-sm leading-none">{name || "Untitled agent"} <span className="font-mono text-[14px] uppercase tracking-[0.08em] text-muted">{code}</span></h1>
           </div>
         </div>
-        <div className="microlabel">table · {tableName} · {practice ? "practice chips" : `${formatNumber(balance)} chips available`}</div>
+        <div className="microlabel">table · {tableName} · {practice ? "practice chips" : onChain ? (walletChips?.ready ? `${formatNumber(balance)} chips in your wallet` : "reading your wallet…") : `${formatNumber(balance)} chips available`}</div>
       </div>
 
       <div className="relative z-10 mt-8 grid gap-10 lg:grid-cols-[1.1fr_1fr_0.9fr] lg:gap-12">
@@ -230,11 +258,23 @@ function AgentBuilderInner() {
               </ul>
               <p className="mt-3 microlabel">Nothing happens until you approve.</p>
             </div>
-            <p className={cn("text-[12px]", liveError || error ? "text-casino-red" : "text-muted")} role={liveError || error ? "alert" : undefined}>{error ?? liveError ?? "All limits inside caps."}</p>
-            <Button variant="accent" size="lg" className="w-full" disabled={!!liveError || !!created} onClick={onApprove}>Approve &amp; activate</Button>
+            {onChain && <ApprovalTerms allowance={allowance} gasPrice={gasPrice} className="border border-hairline p-4" />}
+            <p className={cn("text-[12px]", liveError || error || funding.error ? "text-casino-red" : "text-muted")} role={liveError || error || funding.error ? "alert" : undefined}>{funding.error ?? error ?? liveError ?? "All limits inside caps."}</p>
+            {!created && <Button variant="accent" size="lg" className="w-full" disabled={!!liveError || funding.busy} onClick={onApprove}>{onChain ? "Approve & fund" : "Approve & activate"}</Button>}
+            {created && onChain && (
+              <div className="space-y-2">
+                <p className="text-[12.5px] text-muted">The agent is saved and is not live yet. It starts once its wallet is funded; you can also do this from the agent seat at the table.</p>
+                <div className="flex gap-2">
+                  <Button variant="accent" className="flex-1" disabled={funding.busy} onClick={() => void funding.start(created, () => router.push(tableHref))}>{funding.preparing ? "Preparing…" : "Fund agent wallet"}</Button>
+                  <Button variant="outline" href={tableHref}>Open table</Button>
+                </div>
+              </div>
+            )}
+            {created && !onChain && <Button variant="accent" size="lg" className="w-full" disabled>Approve &amp; activate</Button>}
           </section>
         </div>
       </div>
+      <TransactionModal {...funding.modalProps} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { seatLeash, seatState } from "./use-my-agent";
 import { leashPct, Reveal } from "./agent-page-kit";
 import { AgentMiniCard } from "./agent-mini-card";
 import { AgentActivityFeed } from "./agent-activity-feed";
+import { AgentWalletsList } from "./chain-agent";
 import { OwnAgentsEmpty } from "@/components/home/own-agents";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Button } from "@/components/ui/button";
@@ -65,9 +66,18 @@ export function OwnAgentsLeague() {
             </section>
           </Reveal>
           <Reveal>
+            <section aria-label="Agent wallets" className="border-t border-ink pt-3">
+              <div className="mb-6 flex items-baseline justify-between">
+                <h2 className="microlabel !text-ink">02 · Agent wallets</h2>
+                <span className="microlabel">kept in this browser only</span>
+              </div>
+              <AgentWalletsList />
+            </section>
+          </Reveal>
+          <Reveal>
             <section aria-label="Public league" className="border-t border-ink pt-3">
               <div className="mb-6 flex items-baseline justify-between">
-                <h2 className="microlabel !text-ink">02 · Public league</h2>
+                <h2 className="microlabel !text-ink">03 · Public league</h2>
                 <span className="microlabel">not yet open</span>
               </div>
               <p className="max-w-xl text-[13.5px] text-muted">

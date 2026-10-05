@@ -55,6 +55,7 @@ const KIND: Record<AgentLogKind, TelemetryKind> = {
   paused: "pause",
   resumed: "resume",
   stopped: "stop",
+  chain: "system",
 };
 
 /** The seats' own logs as activity-feed events (oldest first). */

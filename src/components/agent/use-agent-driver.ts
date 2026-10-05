@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useGame } from "@/store/game";
-import { useAgentSeats, decide, evaluateCondition, type AgentSeat } from "@/store/agent-seat";
+import { useAgentSeats, decide, evaluateCondition, leashCheck, betDecisionLabel, type AgentSeat } from "@/store/agent-seat";
 import { getMaximumSafeBet } from "@/lib/risk/engine";
 import { colorOf } from "@/lib/roulette/constants";
 import { sfx } from "@/lib/sound/engine";
@@ -38,8 +38,7 @@ export function useAgentDriver(seat: AgentSeat | undefined, shared: boolean) {
       const store = useAgentSeats.getState();
       const cond = evaluateCondition(s.rules.condition, g.recent);
       const safe = getMaximumSafeBet(g.treasury, 35);
-      const maxAllowed = Math.max(0, Math.min(Math.floor(safe.maxRoundExposure), s.rules.maxBet ?? Infinity, s.allowance + Math.min(0, s.net)));
-      const wager = s.rules.bets.reduce((a, b) => a + b.stake, 0);
+      const { maxAllowed, wager } = leashCheck(s, safe.maxRoundExposure);
       if (!cond.matched) {
         store.recordSkip(seatId, roundId, "condition not met");
         store.recordTrace(seatId, { roundId, at: Date.now(), decision: "SKIP", rule: cond.rule, input: cond.input, condition: false, leash: "n/a", commitment: g.commitment?.commitment });
@@ -59,7 +58,7 @@ export function useAgentDriver(seat: AgentSeat | undefined, shared: boolean) {
       }
       store.recordBet(seatId, roundId, s.rules.bets);
       sfx.agentMatch();
-      store.recordTrace(seatId, { roundId, at: Date.now(), decision: `BET ${s.rules.bets.map((b) => b.betId.toUpperCase().replace("STRAIGHT:", "")).join(" + ")}`, rule: cond.rule, input: cond.input, condition: true, leash: "pass", leashNote: `${Math.max(0, s.rules.stopLoss + s.net)} to stop loss`, maxAllowed, wager, commitment: g.commitment?.commitment, tx: null });
+      store.recordTrace(seatId, { roundId, at: Date.now(), decision: betDecisionLabel(s.rules.bets), rule: cond.rule, input: cond.input, condition: true, leash: "pass", leashNote: `${Math.max(0, s.rules.stopLoss + s.net)} to stop loss`, maxAllowed, wager, commitment: g.commitment?.commitment, tx: null });
       // Shared tables close on the timer; solo tables spin once the agent has bet.
       if (shared) { g.placeBets(); sfx.agentLock(); }
       else setTimeout(() => useGame.getState().phase === "betting" && useGame.getState().placeBets(), 1200);

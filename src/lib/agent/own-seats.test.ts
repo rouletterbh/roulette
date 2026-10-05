@@ -72,3 +72,12 @@ describe("ownSeatEvents", () => {
     expect(ev[1].roundId).toBe(0);
   });
 });
+
+describe("chain-mode seats in the activity feed", () => {
+  it("wallet and chain log lines are system events, never bets or collections", () => {
+    const s = seat({ log: [log("chain", 5), log("bet", 6), log("result", 7, 2)] });
+    const events = ownSeatEvents([s]);
+    expect(events.map((e) => e.kind)).toEqual(["system", "prepare", "collect"]);
+    expect(summarizeOwnSeats([s]).collections).toBe(1);
+  });
+});

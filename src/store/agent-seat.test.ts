@@ -62,3 +62,74 @@ describe("thesis conditions", () => {
     expect(evaluateCondition({ type: "zero-absent", window: 3, min: 3 }, [1, 0, 3]).matched).toBe(false);
   });
 });
+
+describe("leash arithmetic shared by the simulated driver and the chain runner", () => {
+  it("allows the smallest of the exposure cap, the maximum bet and what is left of the allowance", async () => {
+    const { leashCheck, betDecisionLabel } = await import("./agent-seat");
+    expect(leashCheck(seat(), 100)).toEqual({ maxAllowed: 40, wager: 2, ok: true });
+    expect(leashCheck(seat({ net: -39 }), 100)).toEqual({ maxAllowed: 1, wager: 2, ok: false });
+    expect(leashCheck(seat({ net: 15 }), 100).maxAllowed).toBe(40); // winnings do not raise the allowance
+    expect(leashCheck(seat({ rules: { ...rules, maxBet: 1 } }), 100).ok).toBe(false);
+    expect(leashCheck(seat(), 1.9)).toEqual({ maxAllowed: 1, wager: 2, ok: false });
+    expect(betDecisionLabel([{ betId: "red", stake: 1 }, { betId: "straight:17", stake: 1 }])).toBe("BET RED + 17");
+  });
+});
+
+describe("chain-mode seat bookkeeping", () => {
+  const trace = { roundId: 9, at: 0, decision: "BET RED", rule: "", input: "", condition: true, leash: "pass" as const, tx: null };
+  const fresh = async () => {
+    const { useAgentSeats } = await import("./agent-seat");
+    useAgentSeats.setState({ seats: {} });
+    const made = useAgentSeats.getState().create({ name: "c", owner: "0xOwner", tableId: "1", rules, allowance: 40, isPublic: false });
+    if (!made.ok) throw new Error(made.error);
+    useAgentSeats.getState().attachWallet(made.id, "0x00000000000000000000000000000000000000aa");
+    return { store: useAgentSeats, id: made.id, get: () => useAgentSeats.getState().seats[made.id] };
+  };
+
+  it("records the intent before the transaction, then the hash, then the chain's outcome", async () => {
+    const { store, id, get } = await fresh();
+    store.getState().markFunded(id);
+    store.getState().approve(id);
+    store.getState().beginChainBet(id, 9, rules.bets, trace);
+    expect(get().lastRoundId).toBe(9);
+    expect(get().chain?.pending).toMatchObject({ roundId: 9, wager: 2, tx: null });
+    expect(decide(get(), 9)).toEqual({ act: false, skip: "already acted" }); // the round can never be bet twice
+    store.getState().setChainBetTx(id, 9, "0xabc");
+    expect(get().chain?.pending?.tx).toBe("0xabc");
+    expect(get().traces.at(-1)?.tx).toBe("0xabc");
+    store.getState().resolveChainBet(id, 9, { kind: "settled", result: 3, staked: 2, returned: 4 });
+    expect(get()).toMatchObject({ net: 2, roundsPlayed: 1, lastOutcomeWasLoss: false });
+    expect(get().chain?.pending).toBeNull();
+    expect(get().traces.at(-1)).toMatchObject({ result: "RED 3", outcome: 2 });
+    // resolving twice, or the wrong round, changes nothing
+    store.getState().resolveChainBet(id, 9, { kind: "settled", result: 3, staked: 2, returned: 4 });
+    store.getState().resolveChainBet(id, 10, { kind: "settled", result: 3, staked: 2, returned: 0 });
+    expect(get().net).toBe(2);
+  });
+
+  it("a voided or missed round is not a result", async () => {
+    const { store, id, get } = await fresh();
+    store.getState().approve(id);
+    store.getState().beginChainBet(id, 9, rules.bets, trace);
+    store.getState().resolveChainBet(id, 9, { kind: "voided", staked: 2 });
+    expect(get()).toMatchObject({ net: 0, roundsPlayed: 0 });
+    store.getState().beginChainBet(id, 10, rules.bets, { ...trace, roundId: 10 });
+    store.getState().resolveChainBet(id, 10, { kind: "missed", why: "not included" });
+    expect(get()).toMatchObject({ net: 0, roundsPlayed: 0 });
+    expect(get().traces.at(-1)?.result).toBe("NOT INCLUDED");
+    expect(get().log.at(-1)?.kind).toBe("skip");
+  });
+
+  it("the simulated path is unaffected: seats without a wallet ignore chain actions", async () => {
+    const { useAgentSeats } = await import("./agent-seat");
+    useAgentSeats.setState({ seats: {} });
+    const made = useAgentSeats.getState().create({ name: "sim", owner: "practice", tableId: "practice", rules, allowance: 40, isPublic: false });
+    if (!made.ok) throw new Error(made.error);
+    const before = useAgentSeats.getState().seats[made.id];
+    useAgentSeats.getState().beginChainBet(made.id, 1, rules.bets, trace);
+    useAgentSeats.getState().markFunded(made.id);
+    useAgentSeats.getState().markSwept(made.id, 1);
+    expect(useAgentSeats.getState().seats[made.id]).toBe(before);
+    expect(before.chain).toBeUndefined();
+  });
+});
