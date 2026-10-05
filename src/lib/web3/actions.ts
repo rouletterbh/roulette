@@ -163,7 +163,7 @@ export function enterTableUnits(balances: ChipBalances, units: number | undefine
   const sel = units == null ? selectAllChips(balances) : selectChips(balances, units);
   if (units != null && !sel.exact) {
     return guarded(report, async () => {
-      throw new TxError("insufficient-chips", sel.units > 0 ? `Your chip denominations can cover ${sel.units} units, not ${units}. Enter ${sel.units} or get smaller chips.` : "Not enough chips in your wallet.");
+      throw new TxError("insufficient-chips", sel.units > 0 ? `Your chip denominations can cover ${sel.units} units, not ${units}. Enter ${sel.units}, or bring all your chips: cashing out returns smaller ones.` : `Chips cannot be split, and your wallet's chips cannot make exactly ${units}. Bring all your chips instead: you only stake what you bet, and cashing out returns the rest as smaller chips.`);
     });
   }
   return enterTable(sel.ids, sel.amounts, report);

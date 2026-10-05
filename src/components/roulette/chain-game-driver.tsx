@@ -12,7 +12,7 @@ import { useChipApproval, useChipBalances, useCurrentRound, useEscrow, useRandom
 import { enterTableUnits, leaveTable as leaveTableTx, placeBets as placeBetsTx } from "@/lib/web3/actions";
 import { useTxFlow } from "@/lib/web3/use-tx-flow";
 import { buildChainCommitment, buildChainReveal, chainStatusLabel, planChainSync } from "@/lib/web3/round-sync";
-import { BETTING_WINDOW_SECONDS, PAUSE_FLAGS, ROUND_STATUS, contractAddresses, gameContractsReady, resolveChainTableId } from "@/lib/web3/contracts";
+import { BETTING_WINDOW_SECONDS, PAUSE_FLAGS, ROUND_STATUS, contractAddresses, gameContractsReady, resolveChainTableId, selectChips, type ChipBalances } from "@/lib/web3/contracts";
 import { TransactionModal } from "@/components/cashier/transaction-modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,16 @@ const toPlaced = (bets: Record<string, number>): PlacedBet[] =>
       const def = betFromId(id);
       return def ? [{ ...def, stake }] : [];
     });
+
+/** "1 × 50, 2 × 5": what the wallet actually holds, largest first. Chips are fixed denominations and cannot be split. */
+function describeChips(balances: ChipBalances): string {
+  const parts = (Object.keys(balances) as unknown as Array<keyof ChipBalances>)
+    .map((d) => [Number(d), balances[d]] as const)
+    .filter(([, n]) => n > 0n)
+    .sort((a, b) => b[0] - a[0])
+    .map(([d, n]) => `${n.toString()} × ${d}`);
+  return parts.length ? parts.join(", ") : "none";
+}
 
 /** Below this many seconds left in the (approximate) betting window, the table refuses to start a bet transaction. */
 const LATE_BET_GUARD_SECONDS = 10;
@@ -252,7 +262,10 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
   }
 
   const parsedEnter = enterUnits === "" ? undefined : Math.max(0, Math.floor(Number(enterUnits)));
-  const enterDisabled = chips.units === 0 || flow.busy || (parsedEnter != null && (parsedEnter <= 0 || parsedEnter > chips.units));
+  // Chips are whole denominations: an amount the wallet's chips cannot make exactly cannot be escrowed.
+  const enterSel = parsedEnter != null && parsedEnter > 0 && parsedEnter <= chips.units ? selectChips(chips.balances, parsedEnter) : null;
+  const enterInexact = enterSel != null && !enterSel.exact;
+  const enterDisabled = chips.units === 0 || flow.busy || enterInexact || (parsedEnter != null && (parsedEnter <= 0 || parsedEnter > chips.units));
   const label = chainStatusLabel(round.status, round.roundId != null);
 
   return (
@@ -309,8 +322,15 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
                   Enter table
                 </Button>
                 <p className="basis-full text-[12px] text-muted">
-                  {approval.approved ? "One signature: chips move into escrow." : "Two signatures: approve the treasury once, then escrow chips."} Wallet holds {formatNumber(chips.units)} chips.
+                  {approval.approved ? "One signature: chips move into escrow." : "Two signatures: approve the treasury once, then escrow chips."} Wallet holds {formatNumber(chips.units)} chips ({describeChips(chips.balances)}).
                 </p>
+                {enterInexact && (
+                  <p className="basis-full text-[12.5px] text-casino-red" role="alert">
+                    Chips come in 1, 5, 10, 25, 50 and 100 and cannot be split, so your wallet cannot make exactly {formatNumber(parsedEnter ?? 0)}.{" "}
+                    {enterSel && enterSel.units > 0 ? `The closest it can make is ${formatNumber(enterSel.units)}. ` : ""}
+                    Leave the field empty to bring all {formatNumber(chips.units)}: you only stake what you bet, and Cash out returns the rest as smaller chips.
+                  </p>
+                )}
               </div>
             )}
           </div>
