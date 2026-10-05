@@ -33,6 +33,7 @@ const EXPECTED_TOOLS = [
   "build_enter_table_intent",
   "build_place_bets_intent",
   "build_leave_table_intent",
+  "build_convert_to_rewards_intent",
   "build_claim_intent",
 ];
 
@@ -78,13 +79,19 @@ if (!over?.ok || overData?.accepted !== false) fail(`expected an over-limit quot
 console.log(`quote_bets over-limit ok · reason="${overData.limit.reason}"`);
 
 // Intent builders answer with an unsigned transaction or a specific precondition code; both are a pass.
-const PRECONDITIONS = ["ROUND_NOT_OPEN", "INSUFFICIENT_ESCROW", "NO_CHIPS", "INSUFFICIENT_CHIPS", "ASSET_UNAVAILABLE", "INSUFFICIENT_WIN_BALANCE", "TABLE_LIMIT", "PAUSED", "CONTRACTS_NOT_DEPLOYED"];
+const PRECONDITIONS = ["ROUND_NOT_OPEN", "INSUFFICIENT_ESCROW", "NO_CHIPS", "INSUFFICIENT_CHIPS", "ASSET_UNAVAILABLE", "INSUFFICIENT_INVENTORY", "INSUFFICIENT_WIN_BALANCE", "TABLE_LIMIT", "PAUSED", "CONTRACTS_NOT_DEPLOYED"];
 for (const [name, args] of [
   ["build_enter_table_intent", chainBacked ? { address } : { address, chips: [{ denomination: 1, count: 1 }] }],
   ["build_place_bets_intent", { address, bets: [{ betId: "red", stake: 1 }], table: chainBacked ? table.id : undefined, ...(chainBacked ? {} : { roundId: 1 }) }],
   ["build_leave_table_intent", { address, ...(chainBacked ? {} : { units: 1 }) }],
+  ["build_convert_to_rewards_intent", chainBacked ? { address } : { address, chips: [{ denomination: 1, count: 1 }] }],
 ] as const) {
   const r = await callTool(name, args as Record<string, unknown>);
+  if (name === "build_convert_to_rewards_intent" && r?.httpStatus === 404) {
+    // An API deployed before this route existed: the tool is registered, the route is not there yet.
+    console.log(`${name} skipped · ${apiUrl} does not serve /intents/convert-to-rewards yet`);
+    continue;
+  }
   if (r?.ok) {
     const intent = (r.data as { intent: { to: string | null; data: string; chainId: number } }).intent;
     if (!intent?.data?.startsWith("0x") || !intent.to) fail(`${name} returned a malformed intent`);

@@ -26,6 +26,7 @@ export const ADDR = {
 export const PLAYER = "0x1c01912b96BA6783ae8c3c1D8e135Ee185079aa5" as Address;
 export const CASHCAT = "0x020bfC650A365f8BB26819deAAbF3E21291018b4" as Address;
 export const PONS = "0x39dBED3a2bd333467115dE45665cC57F813C4571" as Address;
+export const AI = "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18" as Address;
 export const NOW = 1_791_155_809;
 
 export const CHIP_PRICE = 30_000_000_000_000n;
@@ -117,6 +118,10 @@ export const asset = (address: Address, over: Partial<Omit<RewardAssetState, "va
     vault: { registered: true, enabled: true, decimals: 18, status: 0, inventory: 0n, minimumPayoutUsd: 5n * 10n ** 17n, priceUsd1e18: 163_880_000_000_000_000n, ...vault },
   };
 };
+
+/** A reward asset the vault can pay from: `tokens` whole tokens of inventory (18 decimals), AVAILABLE, fresh price. */
+export const fundedAsset = (address: Address, tokens: bigint, over: Parameters<typeof asset>[1] = {}): RewardAssetState =>
+  asset(address, { ...over, vault: { status: 2, inventory: tokens * 10n ** 18n, ...over.vault } });
 
 export const account = (over: Partial<AccountState> = {}): AccountState => ({
   address: PLAYER,

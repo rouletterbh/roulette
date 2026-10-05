@@ -103,13 +103,14 @@ const builder = { readOnlyHint: true, destructiveHint: false, idempotentHint: tr
 
 export function createServer() {
   const server = new McpServer(
-    { name: "roulette-protocol", version: "0.2.0" },
+    { name: "roulette-protocol", version: "0.3.0" },
     {
       instructions: [
         "Agent-ready interface for Roblette, onchain roulette on Robinhood Chain (independent product; not affiliated with Robinhood).",
         "Tools read live contract state (tables, rounds, treasury, reward vault, oracle prices), verify commit-reveal proofs, quote bets against the treasury limit and build UNSIGNED transactions.",
-        "This server never signs and never broadcasts. Every build_* tool takes your wallet address, checks your on-chain balances and returns { to, data, value, chainId } for your own wallet to sign; when a precondition fails you get a specific error code (ROUND_NOT_OPEN, INSUFFICIENT_ESCROW, NO_CHIPS, INSUFFICIENT_CHIPS, ASSET_UNAVAILABLE, INSUFFICIENT_WIN_BALANCE, TABLE_LIMIT, PAUSED) instead of a transaction.",
+        "This server never signs and never broadcasts. Every build_* tool takes your wallet address, checks your on-chain balances and returns { to, data, value, chainId } for your own wallet to sign; when a precondition fails you get a specific error code (ROUND_NOT_OPEN, INSUFFICIENT_ESCROW, NO_CHIPS, INSUFFICIENT_CHIPS, ASSET_UNAVAILABLE, INSUFFICIENT_INVENTORY, INSUFFICIENT_WIN_BALANCE, TABLE_LIMIT, PAUSED) instead of a transaction.",
         "Typical loop: list_tables → quote_bets → build_enter_table_intent (sign) → poll get_table until currentRound.status is Open → build_place_bets_intent (sign promptly, the betting window is about 45 s) → get_round and verify_round → build_leave_table_intent (sign).",
+        "Rewards are two steps: build_convert_to_rewards_intent (sign) burns wallet chips into a USD win balance at the chip peg, which is ONE-WAY (a win balance is never withdrawable as ETH), then build_claim_intent (sign) pays it as a reward asset from the vault's own inventory. Check list_rewards and the claimableAfter / maxClaimableNow fields first: the vault is restocked in batches, so a win balance can exist before there is inventory to claim it from.",
         "Rounds open only while a player has chips in table escrow, so currentRound null with operator waiting-for-players is normal. Amounts are whole chip units; USD figures are peg-derived. CHAIN_UNAVAILABLE means the chain could not be read: retry.",
         "Agents are bound by the same age, jurisdiction and responsible-play rules as humans. The wheel keeps 1/37 of every bet on average; every spin is independent and stats describe the past only.",
       ].join(" "),
@@ -278,11 +279,33 @@ export function createServer() {
   );
 
   server.registerTool(
+    "build_convert_to_rewards_intent",
+    {
+      title: "Build convert-to-rewards transaction",
+      description:
+        "UNSIGNED CasinoTreasury.convertToRewards(ids, amounts): step 1 of collecting rewards. Burns chips from your WALLET (chips in table escrow must leave the table first) and credits units × the chip peg (USD) to your win balance on the reward vault. ONE-WAY: a win balance can only be claimed as reward assets with build_claim_intent, never converted back to chips or withdrawn as ETH. If the one-time Chip1155 approval is missing it is returned in `prerequisites`: sign that first. The response lists `claimableAfter` (what each asset could pay right now) and warns when the vault has no inventory yet. Errors: NO_CHIPS, INSUFFICIENT_CHIPS, PAUSED.",
+      inputSchema: {
+        address,
+        units: z.number().int().positive().optional().describe("Chip units to convert. Omit (and omit chips) to convert every chip in the wallet."),
+        chips: z
+          .array(z.object({ denomination: z.union([z.literal(1), z.literal(5), z.literal(10), z.literal(25), z.literal(50), z.literal(100)]), count: z.number().int().positive() }))
+          .min(1)
+          .max(6)
+          .optional()
+          .describe("Alternatively name exact chips by denomination (not together with units)."),
+      },
+      outputSchema,
+      annotations: builder,
+    },
+    async (args) => result(await post("/intents/convert-to-rewards", args)),
+  );
+
+  server.registerTool(
     "build_claim_intent",
     {
       title: "Build claim transaction",
       description:
-        "UNSIGNED RewardVault.claimAs(asset, usdAmount, minOut, deadline) that converts win balance into a reward asset. minOut comes from the live vault quote minus slippage; the deadline defaults to 10 minutes. Errors: ASSET_UNAVAILABLE (no inventory, stale price, not enabled), INSUFFICIENT_WIN_BALANCE, PAUSED. Stock Token settlement is jurisdiction-gated.",
+        "UNSIGNED RewardVault.claimAs(asset, usdAmount, minOut, deadline): step 2 of collecting rewards, pays win balance as a reward asset from the vault's inventory. minOut comes from the live vault quote minus slippage; the deadline defaults to 10 minutes. Returns `maxClaimableNow` = min(win balance, vault inventory × posted price). Errors: INSUFFICIENT_INVENTORY (the vault holds none or too little; details.available and details.maxClaimableNow say how much it can pay now, inventory is restocked in batches), ASSET_UNAVAILABLE (not enabled or no fresh price), INSUFFICIENT_WIN_BALANCE (convert chips first), PAUSED. Stock Token settlement is jurisdiction-gated.",
       inputSchema: {
         address,
         asset: z.string().min(1).describe("ERC-20 address, registry id (crypto-cashcat) or symbol (CASHCAT); see list_rewards"),

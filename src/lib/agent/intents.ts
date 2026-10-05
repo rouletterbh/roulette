@@ -1,7 +1,7 @@
 import { encodeFunctionData, isAddress, type Hex } from "viem";
 import { activeChain } from "@/config/chains";
 import { chipTokenIds, type ChipDenomination } from "@/config/tokens";
-import { chip1155Abi, rewardVaultAbi, rouletteGameAbi } from "@/lib/web3/abi";
+import { casinoTreasuryAbi, chip1155Abi, rewardVaultAbi, rouletteGameAbi } from "@/lib/web3/abi";
 import { contractBetToJson, type ContractBet } from "./encode-bets";
 
 /**
@@ -38,6 +38,7 @@ export const FUNCTION_SIGNATURES = {
   enterTable: "enterTable(uint256[] ids,uint256[] amounts)",
   leaveTable: "leaveTable(uint256 units)",
   placeBets: "placeBets(uint256 roundId,(uint64 numbersMask,uint16 multiplier,uint128 stake)[] bets)",
+  convertToRewards: "convertToRewards(uint256[] ids,uint256[] amounts)",
   claimAs: "claimAs(address asset,uint256 usdAmount,uint256 minOut,uint256 deadline)",
   setApprovalForAll: "setApprovalForAll(address operator,bool approved)",
 } as const;
@@ -114,7 +115,7 @@ export function buildApprovalIntent(addresses: IntentAddresses = {}): TxIntent {
     "setApprovalForAll",
     data,
     [operator, true],
-    "One-time approval letting CasinoTreasury escrow your chips when you enter a table.",
+    "One-time approval letting CasinoTreasury move your chips: escrow when you enter a table, burn when you redeem or convert them.",
     treasury ? [] : ["Operator address is the zero address until NEXT_PUBLIC_TREASURY_ADDRESS is set."],
     addresses,
   );
@@ -150,6 +151,26 @@ export function buildPlaceBetsIntent(roundId: bigint, bets: ContractBet[], summa
     "The round must be Open and your escrow must cover the total stake.",
     "The contract re-runs RiskEngine.checkWager over the whole round and reverts with ExposureCapExceeded if the table limit is reached.",
   ], addresses);
+}
+
+/**
+ * CasinoTreasury.convertToRewards(ids, amounts): burns the caller's chips and credits
+ * units × chipUsdValue (USD) to their win balance on the RewardVault. One-way: a win
+ * balance can only be claimed as a reward asset (claimAs), never redeemed for ETH.
+ */
+export function buildConvertToRewardsIntent(lots: ChipLot[], addresses: IntentAddresses = {}) {
+  const { ids, amounts, units } = chipLotsToIdsAmounts(lots);
+  const data = encodeFunctionData({ abi: casinoTreasuryAbi, functionName: "convertToRewards", args: [ids, amounts] });
+  return {
+    intent: intent("CasinoTreasury", "convertToRewards", data, [ids.map(String), amounts.map(String)], `Burn ${units} chip units and credit their USD value at the chip peg to your win balance on the RewardVault.`, [
+      "ONE-WAY: the chips are burned. A win balance can only be claimed as reward assets (claim intent); it cannot be converted back to chips or withdrawn as ETH. To take ETH out, redeem chips instead.",
+      "Requires a prior Chip1155.setApprovalForAll(treasury, true); see prerequisites.",
+      "Reverts while PAUSE_CLAIMS is set, and with RewardVaultNotSet when the treasury has no vault configured.",
+      "Claims are paid from the vault's on-chain inventory: check GET /api/v1/rewards for what is claimable before converting.",
+    ], addresses),
+    prerequisites: [buildApprovalIntent(addresses)],
+    units,
+  };
 }
 
 export function buildClaimIntent(asset: `0x${string}`, usdAmount1e18: bigint, minOut: bigint, deadline: bigint, label: string, addresses: IntentAddresses = {}) {

@@ -154,29 +154,77 @@ exactly ±1 per round, `RandomnessManager.verify(roundId)` is true, the treasury
 reservation, and the state/status files are consistent. ~15s. It writes `contracts/broadcast/Deploy.s.sol/31337/`
 (gitignored). Nothing ever touches a public RPC.
 
-## Reward-inventory conversion (`bun run convert`)
+## Reward fulfilment (`bun run convert`)
 
-The vault is funded by players, never by the founders: 20% of every deposit lands in the treasury's
-`rewardInventory` ETH bucket. `src/convert-inventory.ts` turns that bucket into reward tokens held by the vault:
+The vault is funded by players, never by the founders. Two treasury ETH buckets pay for reward tokens:
 
-1. `CasinoTreasury.withdrawRewardInventory(treasurer, amount)` (TREASURER_ROLE)
+| Bucket | Filled by | Drawn with (TREASURER_ROLE) |
+|---|---|---|
+| `claimable` | `convertToRewards`: the ETH that backed chips a player turned into a win balance. Owed to players as rewards | `CasinoTreasury.fundRewards(to, amount)` |
+| `rewardInventory` | 20% of every deposit | `CasinoTreasury.withdrawRewardInventory(to, amount)` |
+
+`src/convert-inventory.ts` turns them into reward tokens held by the vault:
+
+1. draw the bucket(s) to the treasurer wallet (`SOURCE=both` by default; `claimable` or `inventory` to restrict)
 2. Uniswap v3 `SwapRouter02.exactInputSingle{value}` ETH → asset, per asset, best fee tier by `QuoterV2`
-3. `asset.approve(vault)` + `RewardVault.fundInventory(asset, amount)` (TREASURER_ROLE)
+3. `asset.approve(vault)` + `RewardVault.fundInventory(asset, amount)`
+
+**The key must hold `TREASURER_ROLE`.** The run prints the role it needs and refuses without it. A dry run needs no key.
+The hosted hot key (`OPERATOR_ROLE` only) cannot run this.
+
+**Sizing.** First buy what covers the win balances players already hold: target per asset =
+`RewardVault.totalWinBalance ÷ number of enabled assets`, valued at the posted oracle price, minus what the vault
+already holds of that asset, floored at 0 (an asset the vault is long on does not offset another's shortfall, because
+a player may claim the whole balance as any one asset). The budget fills those shortfalls first, pro rata to the
+shortfall when it cannot cover them all; whatever is left is split by `WEIGHTS` as before. Shortfalls are grossed up by
+`SLIPPAGE_BPS` so a fill at the minimum output still covers.
+
+Example (ETH $2,670, empty vault, a player converted 50 chips → $5.00 win balance, `claimable` 0.0015 ETH,
+`rewardInventory` 0.000857 ETH): target $1.6667 per asset → shortfall $1.6667 each = 0.000624 ETH each, 0.001873 ETH in
+all (0.001892 ETH with 1% slippage headroom). `fundRewards(0.0015 ETH)` covers 80%; the inventory bucket is below its
+0.004 ETH floor, so only the missing 0.000392 ETH is drawn from it as a top-up. Each asset gets 0.000631 ETH; nothing is
+left for the weighted split.
+
+**Floors.** `claimable` is drawn in full once it reaches `MIN_CLAIMABLE_WEI` (0.0005 ETH): it is owed to players. The
+whole `rewardInventory` bucket is drawn only at `MIN_INVENTORY_WEI` (0.004 ETH ≈ $10; smaller speculative buys are
+not worth gas and slippage); below that, only the part of a win-balance shortfall that `claimable` cannot cover is
+drawn. Slices under `MIN_SWAP_WEI` are folded into the largest slice.
+
+**Coverage.** A win balance is USD at the chip peg (`chipUsdValue`, $0.10) while its backing is ETH at the chip price
+(`chipPriceWei`, 0.00003 ETH). `claimable` alone covers a converted chip only above ETH = `chipUsdValue ÷ chipPriceWei`
+= $3,333.33; together with the deposit's reward share (`chipPriceWei × rewardInventoryBps ÷ payoutLiquidityBps` per
+chip) the break-even is `chipUsdValue ÷ (chipPriceWei × (1 + 2000/7000))` = $2,592.59. Every run logs `peg` and
+
+    coverage = (vault inventory value + claimable ETH value + rewardInventory ETH value) ÷ totalWinBalance
+
+and a `coverage.WARNING` line below 100%. Below that, the gap has to come from future deposits' reward share or from
+the treasurer; the command does not hide it and never buys with ETH it did not draw.
 
 `bun run convert:dry` (default) prints the plan with live quotes and sends nothing; `bun run convert` executes.
 Every step is simulated first; the pool quote must be within `MAX_DEVIATION_BPS` of the oracle-implied amount
-(CoinGecko ETH/USD × posted asset price) or the run aborts. A crash after the withdrawal leaves
-`state/conversions.json` with the remaining ETH; `bun run convert:resume` finishes the swaps without withdrawing again.
+(CoinGecko ETH/USD × posted asset price) or the run aborts. Each draw is written to `state/conversions.json` before it
+is sent, with the planned ETH per asset; after a crash `bun run convert:resume` finishes the swaps from the recorded
+remaining ETH and never draws a bucket twice (a draw recorded without a receipt is not re-sent: check the treasurer
+wallet if the ETH is missing).
+
+`--loop` (`bun run convert:loop`, or `PROCESS=rewards` in `start.sh`) repeats the run every `INTERVAL_SEC` (300). A
+"nothing to do" result or a failed run is just the next tick; an unfinished conversion is resumed automatically; a
+wrong chain or a key without `TREASURER_ROLE` still exits. It can run as a hosted service with `STATE_DIR` on a
+volume, but that puts a treasurer key on the host: until that is decided it stays a local command.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `TREASURY_ADDRESS`, `VAULT_ADDRESS` | — | CasinoTreasury / RewardVault |
-| `OPERATOR_PRIVATE_KEY` | — | the TREASURER key (optional for a dry run) |
-| `WEIGHTS` | equal | e.g. `CASHCAT=50,PONS=25,AI=25` |
-| `AMOUNT_WEI` | whole bucket | convert only part of the bucket |
-| `MIN_INVENTORY_WEI` | `0.004 ETH` | refuse below this (≈ $10; gas and slippage make smaller runs pointless) |
+| `OPERATOR_PRIVATE_KEY` | — | a key that holds TREASURER_ROLE (optional for a dry run) |
+| `SOURCE` | `both` | `claimable`, `inventory` or `both` |
+| `WEIGHTS` | equal | split of the budget left after shortfalls, e.g. `CASHCAT=50,PONS=25,AI=25` |
+| `AMOUNT_WEI` | everything drawable | convert at most this much in total (claimable first) |
+| `MIN_CLAIMABLE_WEI` | `0.0005 ETH` | do not draw `claimable` below this |
+| `MIN_INVENTORY_WEI` | `0.004 ETH` | do not draw the whole `rewardInventory` bucket below this (shortfall top-ups excepted) |
+| `MIN_SWAP_WEI` | `0.00005 ETH` | smaller slices are folded into the largest one |
 | `SLIPPAGE_BPS` | `100` | minimum-out tolerance |
 | `MAX_DEVIATION_BPS` | `500` | abort if the pool quote is more than this below the oracle-implied amount |
+| `INTERVAL_SEC` | `300` | pause between runs with `--loop` (minimum 30) |
 | `ROUTER_ADDRESS`, `QUOTER_ADDRESS`, `FACTORY_ADDRESS` | official Uniswap v3 on 4663 | override off mainnet |
 
 Uniswap v3 on Robinhood Chain (chain 4663, from the official deployments list, verified by bytecode):
@@ -199,4 +247,4 @@ Shared variables: `OPERATOR_PRIVATE_KEY` (a **hot key that holds only OPERATOR_R
 Root Directory, variables and the volume are set in the dashboard (the Dockerfile in the root directory is picked up
 automatically). Railway's GitHub App is installed for `rouletterbh/roulette` only; both services auto-deploy from `main`
 with Watch Paths `agent/operator/**`, so pushes that touch only the website or docs do not restart them. Run exactly ONE round operator at a time: stop the local
-one before the hosted one starts. `bun run convert` stays a local, manual command with the treasurer key.
+one before the hosted one starts. `bun run convert` stays a local, manual command with the treasurer key (`PROCESS=rewards` exists for a hosted fulfilment loop, but it needs a TREASURER_ROLE key on the host and is not deployed).

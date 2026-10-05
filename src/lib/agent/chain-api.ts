@@ -1,17 +1,17 @@
 import { z } from "zod";
-import { BaseError, formatEther, parseUnits, type Address } from "viem";
+import { BaseError, formatEther, formatUnits, parseUnits, type Address } from "viem";
 import { activeChain } from "@/config/chains";
 import { siteConfig } from "@/config/site";
 import { chipDenominations, chipTokenIds, rewardRegistry, type ChipDenomination } from "@/config/tokens";
 import { PAYOUT } from "@/lib/roulette/bets";
 import { BETTING_WINDOW_SECONDS, ROUND_STATUS, resolveChainTableId, selectAllChips, selectChips, type ChipSelection, chipIdToDenomination } from "@/lib/web3/contracts";
-import { CLAIM_DEADLINE_MINUTES, CLAIM_SLIPPAGE_BPS, deadlineIn, withSlippage } from "@/lib/web3/claim-math";
-import { ContractNotConfiguredError, type ChainReader, type ChainRoundFull } from "@/lib/web3/server";
+import { CLAIM_DEADLINE_MINUTES, CLAIM_SLIPPAGE_BPS, claimLimit, convertBackingWei, convertCreditUsd1e18, deadlineIn, withSlippage, type ClaimLimit } from "@/lib/web3/claim-math";
+import { ContractNotConfiguredError, type AccountState, type ChainReader, type ChainRoundFull, type RewardAssetState } from "@/lib/web3/server";
 import { roundStatusLabel, type ChainRoundRecord, type ChainTableRecord } from "@/lib/web3/treasury-view";
 import { checkWagerUnits, maxSafeStakeUnits, maximumLiabilityUnits } from "@/lib/risk/units";
 import { API_VERSION, callerAddress, err, ok, type ErrorCode } from "./envelope";
 import { encodeBet, type ContractBet } from "./encode-bets";
-import { buildApprovalIntent, buildClaimIntent, buildEnterTableIntent, buildLeaveTableIntent, buildPlaceBetsIntent, type ChipLot, type IntentAddresses } from "./intents";
+import { buildApprovalIntent, buildClaimIntent, buildConvertToRewardsIntent, buildEnterTableIntent, buildLeaveTableIntent, buildPlaceBetsIntent, type ChipLot, type IntentAddresses } from "./intents";
 import { BetInputSchema, IntentBetInputSchema, QuoteError, resolveBets, type QuoteLine } from "./quote";
 import {
   PROOF_FORMULA,
@@ -490,6 +490,51 @@ export function chainQuote(reader: ChainReader, body: ChainQuoteBody) {
 
 const SIGNING_NOTE = "Unsigned. Sign and broadcast with the wallet that owns `address`; this API holds no key and sends nothing.";
 
+/** The `chips` body field shared by the intents that move wallet chips. */
+const chipLotsField = z
+  .array(
+    z.object({
+      denomination: z
+        .number()
+        .int()
+        .refine((d): d is ChipDenomination => (chipDenominations as readonly number[]).includes(d), { message: `Denomination must be one of ${chipDenominations.join(", ")}` }),
+      count: z.number().int().positive().max(1_000_000),
+    }),
+  )
+  .min(1)
+  .max(6);
+
+/**
+ * Picks chips from the caller's on-chain wallet balances: exact `chips` by denomination,
+ * `units` greedily largest-first (the web app's selection), or every chip. Fails with
+ * INSUFFICIENT_CHIPS when the wallet cannot cover or exactly make the request.
+ */
+function selectWalletChips(body: { units?: number; chips?: Array<{ denomination: ChipDenomination; count: number }> }, account: AccountState, verb: "escrow" | "convert"): ChipSelection {
+  const acct = accountView(account);
+  if (body.chips) {
+    const merged = new Map<ChipDenomination, number>();
+    for (const c of body.chips) merged.set(c.denomination, (merged.get(c.denomination) ?? 0) + c.count);
+    const short = [...merged.entries()].find(([d, n]) => BigInt(n) > account.chips[d]);
+    if (short) throw new ApiFailure("INSUFFICIENT_CHIPS", `Wallet holds ${account.chips[short[0]]} chips of denomination ${short[0]}, not ${short[1]}.`, { account: acct });
+    const entries = [...merged.entries()].sort((x, y) => y[0] - x[0]);
+    return { ids: entries.map(([d]) => chipTokenIds[d]), amounts: entries.map(([, n]) => BigInt(n)), units: entries.reduce((s, [d, n]) => s + d * n, 0), exact: true };
+  }
+  if (body.units != null) {
+    const selection = selectChips(account.chips, body.units);
+    if (!selection.exact) {
+      throw new ApiFailure(
+        "INSUFFICIENT_CHIPS",
+        body.units > account.chipUnits
+          ? `Wallet holds ${account.chipUnits} chip units, not ${body.units}.`
+          : `The wallet's chip denominations cannot make exactly ${body.units} units (largest amount at or below it: ${selection.units}). ${selection.units > 0 ? `Ask for ${selection.units}, or omit` : "Omit"} units to ${verb} every chip.`,
+        { account: acct, coverableUnits: selection.units },
+      );
+    }
+    return selection;
+  }
+  return selectAllChips(account.chips);
+}
+
 export const ChainEnterTableBodySchema = z
   .object({
     /** Wallet that holds the chips and will sign. */
@@ -497,19 +542,7 @@ export const ChainEnterTableBodySchema = z
     /** Chip units to escrow, picked largest-denomination-first from the wallet (same selection as the web app). Omit to escrow every chip. */
     units: z.number().int().positive().max(1_000_000_000).optional(),
     /** Or name exact chips by denomination. */
-    chips: z
-      .array(
-        z.object({
-          denomination: z
-            .number()
-            .int()
-            .refine((d): d is ChipDenomination => (chipDenominations as readonly number[]).includes(d), { message: `Denomination must be one of ${chipDenominations.join(", ")}` }),
-          count: z.number().int().positive().max(1_000_000),
-        }),
-      )
-      .min(1)
-      .max(6)
-      .optional(),
+    chips: chipLotsField.optional(),
   })
   .refine((b) => !(b.units != null && b.chips != null), { message: "Pass either units or chips, not both" });
 
@@ -526,28 +559,7 @@ export function chainEnterTableIntent(reader: ChainReader, body: z.infer<typeof 
       });
     }
 
-    let selection: ChipSelection;
-    if (body.chips) {
-      const merged = new Map<ChipDenomination, number>();
-      for (const c of body.chips) merged.set(c.denomination, (merged.get(c.denomination) ?? 0) + c.count);
-      const short = [...merged.entries()].find(([d, n]) => BigInt(n) > account.chips[d]);
-      if (short) throw new ApiFailure("INSUFFICIENT_CHIPS", `Wallet holds ${account.chips[short[0]]} chips of denomination ${short[0]}, not ${short[1]}.`, { account: acct });
-      const entries = [...merged.entries()].sort((x, y) => y[0] - x[0]);
-      selection = { ids: entries.map(([d]) => chipTokenIds[d]), amounts: entries.map(([, n]) => BigInt(n)), units: entries.reduce((s, [d, n]) => s + d * n, 0), exact: true };
-    } else if (body.units != null) {
-      selection = selectChips(account.chips, body.units);
-      if (!selection.exact) {
-        throw new ApiFailure(
-          "INSUFFICIENT_CHIPS",
-          body.units > account.chipUnits
-            ? `Wallet holds ${account.chipUnits} chip units, not ${body.units}.`
-            : `The wallet's chip denominations cannot make exactly ${body.units} units (largest amount at or below it: ${selection.units}). ${selection.units > 0 ? `Ask for ${selection.units}, or omit` : "Omit"} units to escrow every chip.`,
-          { account: acct, coverableUnits: selection.units },
-        );
-      }
-    } else {
-      selection = selectAllChips(account.chips);
-    }
+    const selection = selectWalletChips(body, account, "escrow");
 
     const lots: ChipLot[] = selection.ids.map((id, i) => ({ denomination: chipIdToDenomination(id)!, count: Number(selection.amounts[i]) }));
     const addresses = intentAddresses(reader);
@@ -676,6 +688,111 @@ export function chainLeaveTableIntent(reader: ChainReader, body: z.infer<typeof 
   });
 }
 
+/* ------------------------------------------------------ collect: convert */
+
+const usdJson = (v: bigint) => Number(formatUnits(v, 18));
+
+/** One reward asset's claim ceiling for a win balance, from the vault's own inventory and fresh price. */
+function claimableView(a: RewardAssetState, winBalanceUsd1e18: bigint) {
+  const v = a.vault;
+  const limit = claimLimit({ winBalanceUsd1e18, inventory: v.inventory, priceUsd1e18: v.priceUsd1e18, decimals: v.decimals, minimumPayoutUsd1e18: v.minimumPayoutUsd, enabled: v.registered && v.enabled });
+  const token = rewardRegistry.find((t) => t.contractAddress?.toLowerCase() === a.address.toLowerCase());
+  return { symbol: token?.symbol ?? null, contractAddress: a.address, ...maxClaimableView(limit, a) };
+}
+
+function maxClaimableView(limit: ClaimLimit, a: RewardAssetState) {
+  return {
+    /** min(win balance, vault inventory × posted price): the most claimAs would pay right now. */
+    maxClaimableUsd: usdJson(limit.maxUsd1e18),
+    maxClaimableUsd1e18: limit.maxUsd1e18.toString(),
+    /** The same maximum as an exact decimal string: pass it as `usdAmount` to claim everything claimable (the number above may round). */
+    maxClaimableUsdAmount: formatUnits(limit.maxUsd1e18, 18),
+    limitedBy: limit.limitedBy,
+    /** Why nothing is claimable: not-enabled | no-price | no-inventory | no-balance | below-minimum; null when claimable. */
+    blocker: limit.blocker,
+    inventory: a.vault.inventory.toString(),
+    inventoryTokens: Number(formatUnits(a.vault.inventory, a.vault.decimals)),
+    /** Vault inventory valued at the fresh posted price; 0 without one. */
+    inventoryUsd: usdJson(limit.inventoryUsd1e18),
+  };
+}
+
+const RESTOCK_NOTE = "Vault inventory is restocked in batches from the treasury's reward buckets (conversions are fulfilled in batches).";
+
+export const ChainConvertToRewardsBodySchema = z
+  .object({
+    /** Wallet that holds the chips and will sign. */
+    address: callerAddress,
+    /** Chip units to convert, picked largest-denomination-first from the wallet. Omit (and omit chips) to convert every wallet chip. */
+    units: z.number().int().positive().max(1_000_000_000).optional(),
+    /** Or name exact chips by denomination. */
+    chips: chipLotsField.optional(),
+  })
+  .strict()
+  .refine((b) => !(b.units != null && b.chips != null), { message: "Pass either units or chips, not both" });
+
+/**
+ * Step 1 of the reward flow: CasinoTreasury.convertToRewards(ids, amounts). Burns wallet
+ * chips and credits units × chipUsdValue to RewardVault.winBalance. One-way. The response
+ * says what each reward asset could pay right now, so an agent does not convert into a
+ * balance it cannot claim yet without knowing.
+ */
+export function chainConvertToRewardsIntent(reader: ChainReader, body: z.infer<typeof ChainConvertToRewardsBodySchema>) {
+  return chainRoute(async () => {
+    requireContracts(reader, ["treasury", "chip", "rewardVault"]);
+    const [account, treasury, assets] = await Promise.all([reader.account(body.address), reader.treasury(), reader.rewardAssets()]);
+    const acct = accountView(account);
+    if (claimsPaused(treasury)) throw new ApiFailure("PAUSED", "Claims are paused on chain (PAUSE_CLAIMS); convertToRewards would revert.", { pause: pauseView(treasury.pause.treasury | (treasury.pause.vault ?? 0)) });
+    if (account.chipUnits <= 0) {
+      const seated = account.escrowUnits > 0n;
+      throw new ApiFailure(
+        "NO_CHIPS",
+        seated
+          ? `${body.address} holds no chips in its wallet; ${account.escrowUnits} chip units are in table escrow. Bring them back with the leave-table intent first: only wallet chips can be converted.`
+          : `${body.address} holds no chips in its wallet, so there is nothing to convert.`,
+        { account: acct },
+      );
+    }
+    const selection = selectWalletChips(body, account, "convert");
+    const lots: ChipLot[] = selection.ids.map((id, i) => ({ denomination: chipIdToDenomination(id)!, count: Number(selection.amounts[i]) }));
+    const addresses = intentAddresses(reader);
+    const built = buildConvertToRewardsIntent(lots, addresses);
+    if (account.approved) built.intent.warnings = built.intent.warnings.filter((w) => !w.startsWith("Requires a prior Chip1155.setApprovalForAll"));
+    const prerequisites = account.approved ? [] : [buildApprovalIntent(addresses)];
+
+    const creditUsd1e18 = convertCreditUsd1e18(built.units, treasury.raw.chipUsdValue);
+    const winAfter = account.winBalanceUsd1e18 + creditUsd1e18;
+    const claimable = assets.filter((a) => a.vault.registered).map((a) => claimableView(a, winAfter));
+    const bestUsd1e18 = claimable.reduce((m, c) => (BigInt(c.maxClaimableUsd1e18) > m ? BigInt(c.maxClaimableUsd1e18) : m), 0n);
+    const warnings: string[] = [];
+    if (bestUsd1e18 === 0n) warnings.push(`No reward asset can be claimed right now: after this conversion the win balance would be $${usdJson(winAfter)} and the vault could pay $0 of it. ${RESTOCK_NOTE} The win balance stays yours until it can be claimed; it cannot be converted back.`);
+    else if (bestUsd1e18 < winAfter) warnings.push(`The vault can pay at most $${usdJson(bestUsd1e18)} in a single asset right now, less than the $${usdJson(winAfter)} win balance this conversion would leave. ${RESTOCK_NOTE}`);
+    built.intent.warnings.push(...warnings);
+
+    return ok(
+      {
+        intent: built.intent,
+        /** Transactions to sign BEFORE `intent`, in order. Empty when the treasury is already an approved operator. */
+        prerequisites,
+        units: built.units,
+        chips: [...lots].sort((x, y) => y.denomination - x.denomination).map((l) => ({ denomination: l.denomination, tokenId: chipTokenIds[l.denomination].toString(), count: l.count })),
+        /** USD credited to the win balance: units × CasinoTreasury.chipUsdValue. */
+        credit: { usd: usdJson(creditUsd1e18), usd1e18: creditUsd1e18.toString(), chipUsdValue: usdJson(treasury.raw.chipUsdValue) },
+        /** ETH that moves from chip backing to the treasury's `claimable` earmark: units × chipPriceWei. */
+        backing: { wei: convertBackingWei(built.units, treasury.raw.chipPriceWei).toString(), chipPriceWei: treasury.raw.chipPriceWei.toString() },
+        oneWay: true as const,
+        account: acct,
+        preflight: { chipsApproved: account.approved, claimsPaused: false, walletChipUnitsAfter: account.chipUnits - built.units, winBalanceUsdAfter: usdJson(winAfter) },
+        /** What each registered asset could pay of the resulting win balance right now. */
+        claimableAfter: claimable,
+        warnings,
+        note: `${prerequisites.length ? "Sign the approval in prerequisites first (once per wallet), then the intent. " : ""}One-way: the win balance can only be claimed as reward assets with the claim intent, never withdrawn as ETH (redeem chips for that instead). ${SIGNING_NOTE}`,
+      },
+      LIVE,
+    );
+  });
+}
+
 export const ChainClaimBodySchema = z
   .object({
     address: callerAddress,
@@ -715,25 +832,45 @@ export function chainClaimIntent(reader: ChainReader, body: z.infer<typeof Chain
     const assetInfo = view ?? { contractAddress: ref.address, registered: false, status: "unavailable" };
     if (!state || !state.vault.registered) throw new ApiFailure("ASSET_UNAVAILABLE", `${label} is not registered on the reward vault.`, { asset: assetInfo });
     if (!state.vault.enabled) throw new ApiFailure("ASSET_UNAVAILABLE", `${label} is registered but not enabled for claims.`, { asset: assetInfo });
-    if (state.vault.status == null || state.vault.status === 0) {
-      const why = state.vault.inventory === 0n ? "the vault holds no inventory of it" : "its oracle price is missing or stale";
-      throw new ApiFailure("ASSET_UNAVAILABLE", `${label} is UNAVAILABLE on the reward vault: ${why}. claimAs would revert.`, { asset: assetInfo });
+    const [account, treasury] = await Promise.all([reader.account(body.address), reader.treasury()]);
+    const limit = claimLimit({ winBalanceUsd1e18: account.winBalanceUsd1e18, inventory: state.vault.inventory, priceUsd1e18: state.vault.priceUsd1e18, decimals: state.vault.decimals, minimumPayoutUsd1e18: state.vault.minimumPayoutUsd, enabled: true });
+    const maxClaimableNow = maxClaimableView(limit, state);
+    // Asset state first (nobody could claim it), then the caller's own balance.
+    if (state.vault.priceUsd1e18 == null || state.vault.priceUsd1e18 <= 0n || (state.vault.inventory > 0n && (state.vault.status == null || state.vault.status === 0))) {
+      throw new ApiFailure("ASSET_UNAVAILABLE", `${label} is UNAVAILABLE on the reward vault: its oracle price is missing or stale. claimAs would revert.`, { asset: assetInfo, maxClaimableNow });
+    }
+    if (state.vault.inventory === 0n) {
+      throw new ApiFailure("INSUFFICIENT_INVENTORY", `The reward vault holds no ${label} right now, so nothing can be claimed as ${label}. ${RESTOCK_NOTE} The win balance is unchanged; retry later or choose another asset (GET /api/v1/rewards).`, {
+        asset: assetInfo,
+        available: { inventory: "0", inventoryTokens: 0, usd: 0 },
+        maxClaimableNow,
+        account: accountView(account),
+      });
     }
 
     const usd1e18 = parseUnits(String(body.usdAmount), 18);
     if (usd1e18 <= 0n) throw new ApiFailure("VALIDATION_ERROR", "usdAmount must be positive");
-    const [account, treasury] = await Promise.all([reader.account(body.address), reader.treasury()]);
     if (claimsPaused(treasury)) throw new ApiFailure("PAUSED", "Claims are paused on chain; claimAs would revert.", { pause: pauseView(treasury.pause.treasury | (treasury.pause.vault ?? 0)) });
-    if (usd1e18 < state.vault.minimumPayoutUsd) throw new ApiFailure("VALIDATION_ERROR", `usdAmount is below the vault's minimum payout for ${label} ($${Number(state.vault.minimumPayoutUsd) / 1e18}).`, { asset: assetInfo });
+    if (usd1e18 < state.vault.minimumPayoutUsd) throw new ApiFailure("VALIDATION_ERROR", `usdAmount is below the vault's minimum payout for ${label} ($${Number(state.vault.minimumPayoutUsd) / 1e18}).`, { asset: assetInfo, maxClaimableNow });
     if (usd1e18 > account.winBalanceUsd1e18) {
-      throw new ApiFailure("INSUFFICIENT_WIN_BALANCE", `${body.address} has a win balance of $${Number(account.winBalanceUsd1e18) / 1e18}, not $${String(body.usdAmount)}.`, { account: accountView(account) });
+      throw new ApiFailure("INSUFFICIENT_WIN_BALANCE", `${body.address} has a win balance of $${Number(account.winBalanceUsd1e18) / 1e18}, not $${String(body.usdAmount)}.${account.winBalanceUsd1e18 === 0n ? " Convert chips to a win balance first with the convert-to-rewards intent." : ""}`, { account: accountView(account), maxClaimableNow });
     }
 
     const quote = await reader.quoteClaim(ref.address, usd1e18);
-    if (!quote) throw new ApiFailure("ASSET_UNAVAILABLE", `The vault could not quote ${label}: its oracle price is missing or stale.`, { asset: assetInfo });
+    if (!quote) throw new ApiFailure("ASSET_UNAVAILABLE", `The vault could not quote ${label}: its oracle price is missing or stale.`, { asset: assetInfo, maxClaimableNow });
     if (quote.amountOut === 0n) throw new ApiFailure("VALIDATION_ERROR", `$${String(body.usdAmount)} buys zero base units of ${label} at the current price.`);
     if (quote.amountOut > state.vault.inventory) {
-      throw new ApiFailure("ASSET_UNAVAILABLE", `The vault holds ${state.vault.inventory} base units of ${label}; this claim needs ${quote.amountOut}. Claim less or choose another asset.`, { asset: assetInfo, amountOut: quote.amountOut.toString() });
+      throw new ApiFailure(
+        "INSUFFICIENT_INVENTORY",
+        `The vault holds ${state.vault.inventory} base units of ${label} (worth $${maxClaimableNow.inventoryUsd} at the posted price); this claim needs ${quote.amountOut}. Claim up to $${maxClaimableNow.maxClaimableUsdAmount} now, or choose another asset. ${RESTOCK_NOTE}`,
+        {
+          asset: assetInfo,
+          required: { amountOut: quote.amountOut.toString(), usd: usdJson(usd1e18) },
+          available: { inventory: state.vault.inventory.toString(), inventoryTokens: maxClaimableNow.inventoryTokens, usd: maxClaimableNow.inventoryUsd },
+          maxClaimableNow,
+          account: accountView(account),
+        },
+      );
     }
 
     const minOut = body.minOut != null ? BigInt(body.minOut) : withSlippage(quote.amountOut, body.slippageBps);
@@ -748,6 +885,8 @@ export function chainClaimIntent(reader: ChainReader, body: z.infer<typeof Chain
         minOut: minOut.toString(),
         slippageBps: body.minOut != null ? null : body.slippageBps,
         deadline: deadline.toString(),
+        /** The most this wallet could claim of this asset right now: min(win balance, vault inventory × posted price). */
+        maxClaimableNow,
         account: accountView(account),
         note: SIGNING_NOTE,
       },

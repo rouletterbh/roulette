@@ -21,6 +21,7 @@ import {
   randomnessManagerAbi,
   rewardVaultAbi,
   rouletteGameAbi,
+  postedPriceOracleAbi as postedPriceOracleReadAbi,
   type ChainRoundStatus,
 } from "./contracts";
 import type { ChainRoundView, RandomnessRoundView } from "./round-sync";
@@ -389,6 +390,160 @@ export function useRewardStatus(asset?: Address | null) {
       refetch: q.refetch,
     };
   }, [q.data, q.isLoading, q.refetch, enabled]);
+}
+
+/* --------------------------------------------------------- collect flow */
+
+/** One reward asset as the cashier's "Claim as" list needs it: everything from chain, nothing from the registry but names. */
+export interface CollectAsset {
+  address: Address;
+  /** Registry id / symbol / name / logo for display. */
+  id: string;
+  symbol: string;
+  name: string;
+  logoURI: string | null;
+  registered: boolean;
+  enabled: boolean;
+  decimals: number;
+  status: RewardAssetStatus;
+  /** Vault inventory, token base units. */
+  inventory: bigint;
+  minimumPayoutUsd1e18: bigint;
+  maxStalenessSeconds: number;
+  /** Fresh oracle price the vault would use (USD 1e18); null when the vault's quote reverts (stale / unset). */
+  priceUsd1e18: bigint | null;
+  /** Last posted oracle price and its timestamp (unix seconds), even when stale; null when unread. */
+  postedPriceUsd1e18: bigint | null;
+  priceUpdatedAt: number | null;
+}
+
+export interface CollectState {
+  enabled: boolean;
+  assets: readonly CollectAsset[];
+  /** RewardVault.pauseFlags | CasinoTreasury.pauseFlags: PAUSE_CLAIMS (4) blocks both convertToRewards and claimAs. */
+  pauseFlags: number;
+  /** CasinoTreasury.rewardVault is set (convertToRewards reverts RewardVaultNotSet otherwise). */
+  vaultLinked: boolean;
+  isFetched: boolean;
+  /** Every read failed: RPC trouble, not "nothing available". */
+  readFailed: boolean;
+  refetch: () => void;
+}
+
+const COLLECT_TOKENS = rewardRegistry.flatMap((t) => (t.contractAddress ? [{ address: t.contractAddress as Address, id: t.id, symbol: t.symbol, name: t.name, logoURI: t.logoURI }] : []));
+const COLLECT_READS = 4;
+const NO_COLLECT_ASSETS: readonly CollectAsset[] = [];
+
+/**
+ * Vault state for the two-step collect flow: per registry asset its config, status,
+ * inventory and $1 quote, plus the oracle's last post (for the price age) and the pause
+ * switches. Two polled multicalls; the returned object and `refetch` are referentially
+ * stable between identical reads.
+ */
+export function useCollectState(): CollectState {
+  const v = contractAddresses.rewardVault;
+  const t = contractAddresses.treasury;
+  const enabled = LIVE && !!v && COLLECT_TOKENS.length > 0;
+  const addr = v ?? zeroAddress;
+  const q = useReadContracts({
+    contracts: [
+      ...COLLECT_TOKENS.flatMap((a) => [
+        { abi: rewardVaultAbi, address: addr, functionName: "assetConfig" as const, args: [a.address] as const, chainId },
+        { abi: rewardVaultAbi, address: addr, functionName: "status" as const, args: [a.address] as const, chainId },
+        { abi: rewardVaultAbi, address: addr, functionName: "inventory" as const, args: [a.address] as const, chainId },
+        { abi: rewardVaultAbi, address: addr, functionName: "quote" as const, args: [a.address, ONE_USD] as const, chainId },
+      ]),
+      { abi: rewardVaultAbi, address: addr, functionName: "pauseFlags" as const, chainId },
+      { abi: casinoTreasuryAbi, address: t ?? addr, functionName: "pauseFlags" as const, chainId },
+      { abi: casinoTreasuryAbi, address: t ?? addr, functionName: "rewardVault" as const, chainId },
+    ],
+    allowFailure: true,
+    query: poll(enabled),
+  });
+  // The oracle is per asset (assetConfig.oracle). The key is a string so the second query only changes when an oracle does.
+  const oracleKey = useMemo(() => {
+    const r = q.data;
+    if (!r) return "";
+    return COLLECT_TOKENS.map((_, i) => {
+      const cfg = r[i * COLLECT_READS];
+      const o = cfg?.status === "success" ? (cfg.result as { oracle: Address }).oracle : zeroAddress;
+      return o;
+    }).join(",");
+  }, [q.data]);
+  const oracleContracts = useMemo(
+    () =>
+      (oracleKey ? oracleKey.split(",") : []).map((o, i) => ({
+        abi: postedPriceOracleReadAbi,
+        address: o as Address,
+        functionName: "getPrice" as const,
+        args: [COLLECT_TOKENS[i]!.address] as const,
+        chainId,
+      })),
+    [oracleKey],
+  );
+  const o = useReadContracts({ contracts: oracleContracts, allowFailure: true, query: poll(enabled && oracleContracts.length > 0) });
+
+  const qRefetch = q.refetch;
+  const oRefetch = o.refetch;
+  const refetch = useCallback(() => {
+    void qRefetch();
+    void oRefetch();
+  }, [qRefetch, oRefetch]);
+
+  const assets = useMemo((): readonly CollectAsset[] => {
+    const r = q.data;
+    if (!r) return NO_COLLECT_ASSETS;
+    return COLLECT_TOKENS.map((tok, i) => {
+      const at = <T,>(k: number): T | undefined => (r[i * COLLECT_READS + k]?.status === "success" ? (r[i * COLLECT_READS + k]!.result as T) : undefined);
+      const cfg = at<{ enabled: boolean; decimals: number; maxStaleness: number; oracle: Address; minimumPayoutUsd: bigint }>(0);
+      const st = at<number>(1);
+      const quote = at<readonly [bigint, bigint]>(3);
+      const posted = o.data?.[i]?.status === "success" ? (o.data[i]!.result as readonly [bigint, bigint]) : undefined;
+      const registered = !!cfg && cfg.oracle !== zeroAddress;
+      return {
+        ...tok,
+        registered,
+        enabled: registered && cfg.enabled,
+        decimals: cfg?.decimals ?? 18,
+        status: st != null ? (ASSET_STATUS[st] ?? "unavailable") : "unavailable",
+        inventory: at<bigint>(2) ?? 0n,
+        minimumPayoutUsd1e18: cfg?.minimumPayoutUsd ?? 0n,
+        maxStalenessSeconds: cfg?.maxStaleness ?? 0,
+        priceUsd1e18: quote && quote[1] > 0n ? quote[1] : null,
+        postedPriceUsd1e18: posted && posted[0] > 0n ? posted[0] : null,
+        priceUpdatedAt: posted && posted[1] > 0n ? Number(posted[1]) : null,
+      };
+    });
+  }, [q.data, o.data]);
+
+  return useMemo(() => {
+    const r = q.data;
+    const tail = COLLECT_TOKENS.length * COLLECT_READS;
+    const num = (i: number) => (r?.[i]?.status === "success" ? Number(r[i]!.result as number) : 0);
+    const linked = r?.[tail + 2]?.status === "success" ? (r[tail + 2]!.result as Address) : undefined;
+    return {
+      enabled,
+      assets,
+      pauseFlags: num(tail) | num(tail + 1),
+      // Unknown (read failed) is not reported as unlinked: the simulation still decodes RewardVaultNotSet.
+      vaultLinked: linked == null ? true : linked !== zeroAddress,
+      isFetched: q.isFetched,
+      readFailed: enabled && q.isFetched && (!r || r.every((x) => x.status !== "success")),
+      refetch,
+    };
+  }, [q.data, q.isFetched, assets, enabled, refetch]);
+}
+
+/** Seconds since the epoch, ticking every `everyMs`; null until mounted so server and first client render agree. */
+export function useNowSeconds(everyMs = 5000): number | null {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const tick = () => setNow(Math.floor(Date.now() / 1000));
+    tick();
+    const id = setInterval(tick, everyMs);
+    return () => clearInterval(id);
+  }, [everyMs]);
+  return now;
 }
 
 /* ------------------------------------------------- treasury / tables pages */

@@ -1,8 +1,8 @@
-import { getAccount, getTransaction, readContract, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getAccount, getTransaction, getTransactionReceipt, readContract, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 
 /** How long the modal waits for a receipt before reporting a dropped or stuck transaction. */
 const RECEIPT_TIMEOUT_MS = 90_000;
-import type { Address, Hex } from "viem";
+import { parseEventLogs, type Address, type Hex } from "viem";
 import { activeChain } from "@/config/chains";
 import type { PlacedBet } from "@/lib/roulette/bets";
 import type { TxStep } from "@/components/cashier/transaction-modal";
@@ -193,6 +193,48 @@ export function placeBets(roundId: bigint, bets: readonly PlacedBet[], report: T
 }
 
 /* --------------------------------------------------------------- rewards */
+
+/**
+ * CasinoTreasury.convertToRewards(ids, amounts): burns `units` of wallet chips (greedy by
+ * denomination, like redeem) and credits units × chipUsdValue to the caller's win balance on
+ * the RewardVault. ONE-WAY: a win balance can only be claimed as a reward asset, never
+ * redeemed for ETH. Needs the same Chip1155 approval as redeem; it is requested first if missing.
+ */
+export function convertToRewards(balances: ChipBalances, units: number, report: TxReporter) {
+  return guarded(report, async () => {
+    const { address } = connectedAccount();
+    const treasury = need(contractAddresses.treasury, "Treasury");
+    need(contractAddresses.rewardVault, "RewardVault");
+    const sel = selectChips(balances, units);
+    if (sel.ids.length === 0) throw new TxError("insufficient-chips", "No chips in your wallet to convert. Chips at a table must be cashed out to your wallet first.");
+    if (!sel.exact) throw new TxError("insufficient-chips", `Your chip denominations can cover ${sel.units} units, not ${units}. Adjust the amount.`);
+    await ensureApproved(report, address);
+    const { request } = await simulateContract(wagmiConfig, { abi: casinoTreasuryAbi, address: treasury, functionName: "convertToRewards", args: [sel.ids, sel.amounts], account: address, chainId });
+    return send(report, () => writeContract(wagmiConfig, request));
+  });
+}
+
+export interface ClaimReceipt {
+  asset: Address;
+  /** Token base units the vault transferred. */
+  amountOut: bigint;
+  usd1e18: bigint;
+  /** Oracle price the claim settled at, USD 1e18. */
+  price: bigint;
+}
+
+/** What a confirmed claim paid, read from the vault's `Claimed` event in the receipt. Null if it cannot be read. */
+export async function readClaimReceipt(hash: Hex): Promise<ClaimReceipt | null> {
+  try {
+    const receipt = await getTransactionReceipt(wagmiConfig, { hash, chainId });
+    const vault = contractAddresses.rewardVault?.toLowerCase();
+    const [log] = parseEventLogs({ abi: rewardVaultAbi, eventName: "Claimed", logs: receipt.logs }).filter((l) => !vault || l.address.toLowerCase() === vault);
+    if (!log) return null;
+    return { asset: log.args.asset, amountOut: log.args.amountOut, usd1e18: log.args.usdAmount, price: log.args.price };
+  } catch {
+    return null;
+  }
+}
 
 /** RewardVault.quote(asset, usd): token base units + oracle price. Throws (decoded) when stale. */
 export async function quoteClaim(asset: Address, usd1e18: bigint): Promise<{ amountOut: bigint; price: bigint }> {

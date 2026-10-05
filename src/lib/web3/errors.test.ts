@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BaseError, ContractFunctionRevertedError, UserRejectedRequestError, encodeErrorResult } from "viem";
-import { allErrorsAbi, riskEngineAbi, rouletteGameAbi } from "./contracts";
+import { allErrorsAbi, casinoTreasuryAbi, riskEngineAbi, rouletteGameAbi } from "./contracts";
 import { decodeRevertData, describeContractError, toTxError } from "./errors";
 
 describe("custom error decoding", () => {
@@ -39,6 +39,24 @@ describe("custom error decoding", () => {
       expect(d.message.length).toBeGreaterThan(10);
     }
     expect(describeContractError("SomethingNew", [5n]).message).toContain("SomethingNew");
+  });
+
+  it("has copy for the collect flow: convertToRewards and claimAs reverts", () => {
+    expect(describeContractError("RewardVaultNotSet")).toMatchObject({ code: "rewards-unavailable" });
+    expect(describeContractError("RewardVaultNotSet").message).toMatch(/chips are unchanged/);
+    expect(describeContractError("SolvencyViolation").code).toBe("rewards-unavailable");
+    // EnforcedPause carries the blocking flag: 4 is PAUSE_CLAIMS, which gates both convertToRewards and claimAs.
+    expect(describeContractError("EnforcedPause", [4]).message).toMatch(/Conversions and claims are paused/);
+    expect(describeContractError("EnforcedPause", [2]).message).toMatch(/Leave table/);
+    expect(describeContractError("EnforcedPause", [1]).message).toMatch(/Deposits/);
+    expect(describeContractError("EnforcedPause", [8]).message).toMatch(/Withdrawals/);
+    // InsufficientInventory(asset, required, available)
+    expect(describeContractError("InsufficientInventory", ["0x0", 5n, 0n]).message).toMatch(/being restocked/);
+    expect(describeContractError("InsufficientInventory", ["0x0", 5n, 3n]).message).toMatch(/up to the maximum shown/);
+    const data = encodeErrorResult({ abi: casinoTreasuryAbi, errorName: "RewardVaultNotSet" });
+    expect(toTxError(new ContractFunctionRevertedError({ abi: casinoTreasuryAbi, functionName: "convertToRewards", data })).code).toBe("rewards-unavailable");
+    const paused = encodeErrorResult({ abi: casinoTreasuryAbi, errorName: "EnforcedPause", args: [4] });
+    expect(toTxError(new ContractFunctionRevertedError({ abi: casinoTreasuryAbi, functionName: "convertToRewards", data: paused })).message).toMatch(/Conversions and claims/);
   });
 
   it("merges every error from the deployed ABIs without duplicates by signature", () => {

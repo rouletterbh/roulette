@@ -52,7 +52,7 @@ export const demoOpenapiDocument = {
     version: API_VERSION,
     summary: "Agent-ready read, verify, quote and unsigned-intent interface for a social roulette club built on Robinhood Chain.",
     description: [
-      "Machine interface for AI agents and integrations. Reads are public and cacheable; the four `intents` routes return UNSIGNED transaction intents that the agent's own wallet must sign.",
+      "Machine interface for AI agents and integrations. Reads are public and cacheable; the five `intents` routes return UNSIGNED transaction intents that the agent's own wallet must sign.",
       "This API never holds keys and never signs. Agents are bound by the same age, jurisdiction and responsible-play gates as human players, and every wager is limited by treasury collateral before acceptance.",
       "Status: beta and demo-backed until contracts deploy. Every response carries `demo: true` when served from simulated data.",
       "Independent product built on Robinhood Chain. Not affiliated with, endorsed by or operated by Robinhood.",
@@ -235,6 +235,15 @@ export const demoOpenapiDocument = {
         summary: `Unsigned RouletteGame.${FUNCTION_SIGNATURES.leaveTable}`,
         requestBody: { required: true, content: { "application/json": { schema: ref("LeaveTableRequest"), example: { units: 25 } } } },
         responses: intentResponses("LeaveTableIntent"),
+      },
+    },
+    "/intents/convert-to-rewards": {
+      post: {
+        tags: ["intents"],
+        operationId: "buildConvertToRewardsIntent",
+        summary: `Unsigned CasinoTreasury.${FUNCTION_SIGNATURES.convertToRewards} plus the one-time Chip1155 approval prerequisite; one-way (chips become a win balance)`,
+        requestBody: { required: true, content: { "application/json": { schema: ref("EnterTableRequest"), example: { chips: [{ denomination: 25, count: 2 }] } } } },
+        responses: intentResponses("ConvertToRewardsIntent"),
       },
     },
     "/intents/claim": {
@@ -533,6 +542,10 @@ export const demoOpenapiDocument = {
           minOut: { type: "string", pattern: "^\\d+$", default: "0", description: "Minimum token base units (slippage guard)" },
           deadline: { type: "integer", description: "Unix seconds; default now + 20 min" },
         },
+      },
+      ConvertToRewardsIntent: {
+        type: "object",
+        properties: { intent: ref("TxIntent"), prerequisites: { type: "array", items: ref("TxIntent"), description: "Chip1155.setApprovalForAll(treasury, true), once per wallet" }, units: { type: "integer" }, chips: { type: "array" }, oneWay: { const: true }, note: { type: "string" } },
       },
       ClaimIntent: { type: "object", properties: { intent: ref("TxIntent"), asset: { type: "object" }, usdAmount1e18: { type: "string" }, deadline: { type: "string" } } },
       Dataset: {

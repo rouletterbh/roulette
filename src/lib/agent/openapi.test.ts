@@ -136,11 +136,11 @@ describe("chain-backed openapi document", () => {
   it("documents every error code the API can return", () => {
     const codes = (schemas.ErrorEnvelope!.properties!.error as { properties: { code: { enum: string[] } } }).properties.code.enum;
     expect([...codes].sort()).toEqual([...ERROR_CODES].sort());
-    for (const code of ["ROUND_NOT_OPEN", "INSUFFICIENT_ESCROW", "NO_CHIPS", "INSUFFICIENT_CHIPS", "ASSET_UNAVAILABLE", "INSUFFICIENT_WIN_BALANCE", "PAUSED", "CHAIN_UNAVAILABLE"]) expect(codes).toContain(code);
+    for (const code of ["ROUND_NOT_OPEN", "INSUFFICIENT_ESCROW", "NO_CHIPS", "INSUFFICIENT_CHIPS", "ASSET_UNAVAILABLE", "INSUFFICIENT_WIN_BALANCE", "INSUFFICIENT_INVENTORY", "PAUSED", "CHAIN_UNAVAILABLE"]) expect(codes).toContain(code);
   });
 
   it("requires the caller's address on every intent and never on reads", () => {
-    for (const name of ["EnterTableRequest", "PlaceBetsRequest", "LeaveTableRequest", "ClaimRequest"]) {
+    for (const name of ["EnterTableRequest", "PlaceBetsRequest", "LeaveTableRequest", "ConvertToRewardsRequest", "ClaimRequest"]) {
       expect(schemas[name]!.required, name).toContain("address");
       expect(schemas[name]!.properties!.address, name).toBeTruthy();
     }
@@ -158,6 +158,18 @@ describe("chain-backed openapi document", () => {
     expect(chainOpenapiDocument.info.description).toMatch(/never holds keys and never signs/);
     expect(chainOpenapiDocument.info.description).toMatch(/Robinhood Chain/);
     expect(JSON.stringify(schemas.TxIntent!.properties!.to)).not.toContain("null");
+  });
+
+  it("documents the two-step reward flow: convert-to-rewards, then claim with the maximum claimable now", () => {
+    const paths = chainOpenapiDocument.paths as Record<string, { post?: { operationId: string; responses: Record<string, unknown> } }>;
+    expect(paths["/intents/convert-to-rewards"]!.post!.operationId).toBe("buildConvertToRewardsIntent");
+    expect(JSON.stringify(paths["/intents/convert-to-rewards"]!.post!.responses["409"])).toMatch(/NO_CHIPS.*INSUFFICIENT_CHIPS.*PAUSED/);
+    expect(JSON.stringify(paths["/intents/claim"]!.post!.responses["409"])).toMatch(/INSUFFICIENT_INVENTORY/);
+    expect(schemas.ConvertToRewardsIntent!.properties!.oneWay).toEqual({ const: true });
+    expect(schemas.ClaimIntent!.properties!.maxClaimableNow).toEqual({ $ref: "#/components/schemas/MaxClaimable" });
+    expect(schemas.MaxClaimable!.properties!.blocker!.enum).toContain("no-inventory");
+    expect(chainOpenapiDocument.info.description).toMatch(/one-way/);
+    expect(chainOpenapiDocument.info.description).toMatch(/five `intents` routes/);
   });
 
   it("chain datasets are marked as not simulated and say where they come from", () => {

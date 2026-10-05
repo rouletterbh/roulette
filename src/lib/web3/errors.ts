@@ -27,6 +27,7 @@ export type TxErrorCode =
   | "below-minimum"
   | "insufficient-win-balance"
   | "asset-unavailable"
+  | "rewards-unavailable"
   | "reverted"
   | "dropped"
   | "timeout"
@@ -48,11 +49,25 @@ export class TxError extends Error {
 const STATUS_LABEL = ["not opened", "open", "closed", "settled", "voided"];
 const fmt = (v: unknown) => (typeof v === "bigint" ? v.toString() : String(v));
 
+/** EnforcedPause(flag): flag is the single pause bit that blocked the call (1 deposits, 2 gameplay, 4 claims, 8 withdrawals). */
+function pausedMessage(flag: unknown): string {
+  switch (Number(flag ?? 0)) {
+    case 1:
+      return "Deposits are paused by the operator right now.";
+    case 4:
+      return "Conversions and claims are paused by the operator right now. Your chips and win balance are unchanged; redeeming chips for ETH is a separate switch.";
+    case 8:
+      return "Withdrawals are paused by the operator right now.";
+    default:
+      return "This action is paused by the operator right now. Escrow can still be withdrawn with Leave table.";
+  }
+}
+
 /** Pure mapping of a decoded custom error (name + args) to copy. Exported for tests. */
 export function describeContractError(errorName: string, args: readonly unknown[] = []): { code: TxErrorCode; message: string } {
   switch (errorName) {
     case "EnforcedPause":
-      return { code: "paused", message: "This action is paused by the operator right now. Escrow can still be withdrawn with Leave table." };
+      return { code: "paused", message: pausedMessage(args[0]) };
     case "ExposureCapExceeded":
       return { code: "table-limit", message: `Table limit reached: this round would owe up to ${fmt(args[0])} units against a cap of ${fmt(args[1])}. Lower your stake.` };
     case "InsufficientEscrow":
@@ -89,7 +104,21 @@ export function describeContractError(errorName: string, args: readonly unknown[
     case "SlippageExceeded":
       return { code: "slippage", message: `Price moved: you would receive ${fmt(args[0])} base units, below your minimum of ${fmt(args[1])}.` };
     case "InsufficientInventory":
-      return { code: "inventory", message: "The reward vault does not hold enough of that asset. Pick another asset or a smaller amount." };
+      // (asset, required, available) in token base units.
+      return {
+        code: "inventory",
+        message:
+          args.length >= 3 && fmt(args[2]) === "0"
+            ? "The reward vault holds none of that asset right now. Vault inventory is being restocked: conversions are fulfilled in batches. Your win balance is unchanged."
+            : "The reward vault does not hold enough of that asset for this amount. Claim up to the maximum shown, or pick another asset. Your win balance is unchanged.",
+      };
+    case "RewardVaultNotSet":
+      return { code: "rewards-unavailable", message: "The treasury has no reward vault configured, so chips cannot be converted to a win balance yet. Your chips are unchanged." };
+    case "SolvencyViolation":
+      return { code: "rewards-unavailable", message: "The treasury rejected this because it would break its solvency check. Nothing was changed; try a smaller amount." };
+    case "LengthMismatch":
+    case "ERC1155InvalidArrayLength":
+      return { code: "reverted", message: "Chip ids and amounts do not line up. Refresh and try again." };
     case "DeadlineExpired":
       return { code: "deadline", message: "The claim quote expired. Re-open the claim to get a fresh quote." };
     case "BelowMinimumPayout":

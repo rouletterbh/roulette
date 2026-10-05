@@ -27,6 +27,7 @@ export type ErrorCode =
   | "INSUFFICIENT_CHIPS"
   | "ASSET_UNAVAILABLE"
   | "INSUFFICIENT_WIN_BALANCE"
+  | "INSUFFICIENT_INVENTORY"
   | "PAUSED"
   // The chain could not be read. Nothing is simulated in its place.
   | "CHAIN_UNAVAILABLE"
@@ -46,6 +47,7 @@ export const ERROR_CODES = [
   "INSUFFICIENT_CHIPS",
   "ASSET_UNAVAILABLE",
   "INSUFFICIENT_WIN_BALANCE",
+  "INSUFFICIENT_INVENTORY",
   "PAUSED",
   "CHAIN_UNAVAILABLE",
   "INTERNAL",
@@ -110,6 +112,7 @@ function defaultStatus(code: ErrorCode) {
     case "INSUFFICIENT_CHIPS":
     case "ASSET_UNAVAILABLE":
     case "INSUFFICIENT_WIN_BALANCE":
+    case "INSUFFICIENT_INVENTORY":
     case "PAUSED":
       return 409;
     case "CHAIN_UNAVAILABLE":

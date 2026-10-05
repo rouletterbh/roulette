@@ -1,35 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { formatEther, type Address, type Hex } from "viem";
+import { formatEther, type Hex } from "viem";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { WalletButton } from "@/components/layout/wallet-button";
 import { TransactionModal } from "./transaction-modal";
-import { RewardSelector } from "@/components/rewards/reward-selector";
+import { CollectPanel } from "./collect-panel";
 import { useWallet } from "@/store/wallet";
-import { getRewardInventory, type RewardInventory } from "@/lib/demo/rewards";
 import { chipDenominations } from "@/config/tokens";
 import { explorerTx, explorerAddress } from "@/config/chains";
 import { cn, formatUsd, formatNumber, shortAddress, relativeTime } from "@/lib/utils";
 import { track, bucketAmount } from "@/lib/analytics/events";
-import { useChipBalances, useEscrow, useRewardStatus, useTreasurySnapshot, useWinBalance, useWithdrawable } from "@/lib/web3/hooks";
-import { claimAs, deadlineIn, deposit, quoteClaim, redeemAndWithdraw, withSlippage, withdraw } from "@/lib/web3/actions";
-import { CLAIM_DEADLINE_MINUTES, CLAIM_SLIPPAGE_BPS } from "@/lib/web3/claim-math";
+import { useChipBalances, useEscrow, useTreasurySnapshot, useWinBalance, useWithdrawable } from "@/lib/web3/hooks";
+import { deposit, redeemAndWithdraw, withdraw } from "@/lib/web3/actions";
 import { useTxFlow } from "@/lib/web3/use-tx-flow";
 import { PAUSE_FLAGS, contractAddresses } from "@/lib/web3/contracts";
 
 /**
  * Cashier against the live contracts (demo mode off). Deposits mint chips for the
  * payout-liquidity share of the ETH sent; redemptions are pull payments (redeem →
- * withdraw); claims settle win balance as a vault asset at the oracle price.
+ * withdraw); the Claim tab is the two-step collect flow in ./collect-panel.tsx (convert chips to a
+ * win balance, then claim it as a vault asset at the oracle price).
  */
 const TABS = ["deposit", "chips", "claim", "withdraw"] as const;
 type Tab = (typeof TABS)[number];
-const SLIPPAGE_BPS = CLAIM_SLIPPAGE_BPS;
 
 const fmtEth = (wei: bigint, digits = 6) => `${Number(formatEther(wei)).toFixed(digits).replace(/\.?0+$/, "")} ETH`;
 
@@ -59,14 +57,14 @@ export function ChainCashier() {
   const win = useWinBalance(address);
   const flow = useTxFlow();
   const [recent, setRecent] = useState<Array<{ hash: Hex; label: string; at: number }>>([]);
-  const record = (label: string) => (hash: Hex) => setRecent((r) => [{ hash, label, at: Date.now() }, ...r].slice(0, 8));
+  const recordTx = useCallback((label: string, hash: Hex) => setRecent((r) => [{ hash, label, at: Date.now() }, ...r].slice(0, 8)), []);
+  const record = (label: string) => (hash: Hex) => recordTx(label, hash);
 
   const wrongNetwork = wallet.status === "wrong-network";
   const connected = wallet.status === "connected";
   const configured = !!contractAddresses.treasury && !!contractAddresses.chip;
   const pausedDeposits = (treasury.pauseFlags & PAUSE_FLAGS.deposits) !== 0;
   const pausedWithdrawals = (treasury.pauseFlags & PAUSE_FLAGS.withdrawals) !== 0;
-  const pausedClaims = (treasury.pauseFlags & PAUSE_FLAGS.claims) !== 0;
   const blocked = wrongNetwork || !configured || flow.busy;
 
   // deposit
@@ -74,15 +72,6 @@ export function ChainCashier() {
   const liquidityBps = treasury.split?.payoutLiquidityBps ?? 0;
   const depositWei = useMemo(() => depositValueFor(chipsIn, treasury.chipPriceWei, liquidityBps), [chipsIn, treasury.chipPriceWei, liquidityBps]);
   const chipUsd = Number(treasury.chipUsdValue) / 1e18;
-
-  // claim
-  const inventory = useMemo(() => getRewardInventory().filter((i) => i.token.contractAddress && i.token.enabled), []);
-  const [assetId, setAssetId] = useState<string | null>(null);
-  const chosen: RewardInventory | undefined = inventory.find((i) => i.token.id === assetId);
-  const chosenAddress = (chosen?.token.contractAddress ?? null) as Address | null;
-  const reward = useRewardStatus(chosenAddress);
-  const claimUsd = win.usd;
-  const estimatedOut = chosen && reward.priceUsd ? claimUsd / reward.priceUsd : null;
 
   // withdraw
   const [withdrawChips, setWithdrawChips] = useState(50);
@@ -111,26 +100,6 @@ export function ChainCashier() {
         record("Deposit")(hash);
         track("deposit_complete", { amount: bucketAmount(chipsIn) });
         await Promise.all([chips.refetch(), treasury.refetch()]);
-      },
-    });
-  };
-
-  const openClaim = () => {
-    if (!chosenAddress || !chosen) return;
-    const usd1e18 = win.usd1e18;
-    track("claim_start", { amount: bucketAmount(claimUsd) });
-    flow.open({
-      title: "Claim",
-      summary: [["Amount", formatUsd(claimUsd)], ["Asset", chosen.token.symbol], ["Estimated", estimatedOut != null ? `${formatNumber(estimatedOut)} ${chosen.token.symbol}` : "quoted at claim"], ["Slippage tolerance", `${SLIPPAGE_BPS / 100}%`]],
-      run: async (report) => {
-        const q = await quoteClaim(chosenAddress, usd1e18);
-        return claimAs(chosenAddress, usd1e18, withSlippage(q.amountOut, SLIPPAGE_BPS), deadlineIn(CLAIM_DEADLINE_MINUTES), report);
-      },
-      onSuccess: async (hash) => {
-        record(`Claim ${chosen.token.symbol}`)(hash);
-        track("claim_complete", { amount: bucketAmount(claimUsd) });
-        setAssetId(null);
-        await Promise.all([win.refetch(), reward.refetch()]);
       },
     });
   };
@@ -247,31 +216,19 @@ export function ChainCashier() {
                 <div className="mt-6 flex gap-3"><Button href="/play/quick">Play</Button><Button href="/tables" variant="outline">Find a table</Button></div>
               </div>
             )}
-            {tab === "claim" && (
-              <div>
-                <div className="rounded-2xl bg-ink p-6 text-canvas">
-                  <div className="eyebrow !text-canvas/60">Win balance</div>
-                  <div className="font-display mt-1 text-5xl tnum">{formatUsd(claimUsd)}</div>
-                  <p className="mt-2 text-[12.5px] text-canvas/70">Choose how it settles. Quotes come from the posted oracle at claim time; token amounts are never promised in advance.</p>
-                </div>
-                <h2 className="eyebrow mb-3 mt-8">Claim as</h2>
-                {inventory.length === 0 ? <p className="text-[13px] text-muted">No reward assets are enabled yet.</p> : <RewardSelector items={inventory} amountUsd={claimUsd} value={assetId} onChange={setAssetId} />}
-                {chosen && (
-                  <dl className="mt-6 divide-y divide-hairline">
-                    {row("Asset", chosen.token.symbol)}
-                    {row("Amount", formatUsd(claimUsd))}
-                    {row("Oracle price", reward.priceUsd ? formatUsd(reward.priceUsd, { maximumFractionDigits: 6 }) : <span className="text-muted">{reward.quoteStale ? "stale · settled at claim" : "reading…"}</span>)}
-                    {row("You receive (est.)", estimatedOut != null ? `${formatNumber(estimatedOut)} ${chosen.token.symbol}` : "—")}
-                    {row("Vault inventory", `${formatNumber(reward.inventoryUnits)} ${chosen.token.symbol} · ${reward.status}`)}
-                    {row("Minimum claim", formatUsd(reward.minimumPayoutUsd))}
-                    {row("Slippage tolerance", `${SLIPPAGE_BPS / 100}%`)}
-                  </dl>
-                )}
-                {pausedClaims && <p className="mt-4 text-[12.5px] text-casino-red">Claims are paused by the operator.</p>}
-                <Button variant="accent" size="lg" className="mt-6 w-full" disabled={blocked || pausedClaims || !chosen || claimUsd <= 0 || claimUsd < reward.minimumPayoutUsd || !reward.enabled} onClick={openClaim}>
-                  Claim
-                </Button>
-              </div>
+            {tab === "claim" && address && (
+              <CollectPanel
+                address={address}
+                chips={chips}
+                escrowUnits={escrow.units}
+                win={win}
+                chipUsdValue={treasury.chipUsdValue}
+                blocked={blocked}
+                treasuryPauseFlags={treasury.pauseFlags}
+                open={flow.open}
+                record={recordTx}
+                refetchTreasury={treasury.refetch}
+              />
             )}
             {tab === "withdraw" && (
               <div>

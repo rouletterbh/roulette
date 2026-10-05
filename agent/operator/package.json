@@ -11,6 +11,8 @@
     "convert": "bun run src/convert-inventory.ts --execute",
     "convert:dry": "bun run src/convert-inventory.ts",
     "convert:resume": "bun run src/convert-inventory.ts --execute --resume",
+    "convert:loop": "bun run src/convert-inventory.ts --execute --loop",
+    "convert:loop:dry": "bun run src/convert-inventory.ts --loop",
     "test": "bun test"
   },
   "dependencies": {

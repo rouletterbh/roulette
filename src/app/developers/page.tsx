@@ -54,6 +54,7 @@ const endpoints = [
   ["POST", "/api/v1/intents/enter-table", `Unsigned ${FUNCTION_SIGNATURES.enterTable.split("(")[0]}`],
   ["POST", "/api/v1/intents/place-bets", `Unsigned ${FUNCTION_SIGNATURES.placeBets.split("(")[0]}`],
   ["POST", "/api/v1/intents/leave-table", `Unsigned ${FUNCTION_SIGNATURES.leaveTable.split("(")[0]}`],
+  ["POST", "/api/v1/intents/convert-to-rewards", "Unsigned CasinoTreasury.convertToRewards (chips to a win balance, one-way)"],
   ["POST", "/api/v1/intents/claim", `Unsigned RewardVault.${FUNCTION_SIGNATURES.claimAs.split("(")[0]}`],
   ["GET", "/api/v1/openapi.json", "OpenAPI 3.1 document"],
   ["GET", "/api/v1/datasets", "Dataset catalog"],
@@ -75,6 +76,7 @@ const mcpTools = [
   "build_enter_table_intent",
   "build_place_bets_intent",
   "build_leave_table_intent",
+  "build_convert_to_rewards_intent",
   "build_claim_intent",
 ];
 
@@ -247,7 +249,7 @@ curl -s -X POST https://<host>/api/v1/verify \\
           </div>
         </Section>
 
-        <Section id="mcp" n="04" eyebrow="MCP server" title="Sixteen tools, stdio transport, zero keys.">
+        <Section id="mcp" n="04" eyebrow="MCP server" title="Seventeen tools, stdio transport, zero keys.">
           <p>
             The MCP server lives in <code className={code}>agent/mcp</code> of the repository. It is a thin client over the REST API: every tool calls an endpoint and returns the structured
             result, so there is exactly one place where limits and encodings are defined.
@@ -275,11 +277,11 @@ curl -s -X POST https://<host>/api/v1/verify \\
             </ul>
           </div>
           <p>
-            The four <code className={code}>build_*</code> tools{CHAIN_BACKED ? " take your wallet address, check its onchain balances and" : ""} return intents, not receipts. Hand them to the wallet integration your agent already trusts.
+            The five <code className={code}>build_*</code> tools{CHAIN_BACKED ? " take your wallet address, check its onchain balances and" : ""} return intents, not receipts. Hand them to the wallet integration your agent already trusts.
           </p>
         </Section>
 
-        <Section id="endpoints" n="05" eyebrow="Endpoints" title="Eighteen routes under /api/v1.">
+        <Section id="endpoints" n="05" eyebrow="Endpoints" title="Nineteen routes under /api/v1.">
           <EndpointTable endpoints={endpoints} />
           <p>
             Reads are cached briefly and allow any origin. POST routes are lightly rate limited per client. Errors use stable codes: <code className={code}>VALIDATION_ERROR</code>,{" "}

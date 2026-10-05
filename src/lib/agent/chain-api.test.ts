@@ -3,16 +3,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { decodeFunctionData, type Address } from "viem";
 import { activeChain } from "@/config/chains";
 import { ROUND_STATUS } from "@/lib/web3/contracts";
-import { chip1155Abi, rewardVaultAbi, rouletteGameAbi } from "@/lib/web3/abi";
+import { casinoTreasuryAbi, chip1155Abi, rewardVaultAbi, rouletteGameAbi } from "@/lib/web3/abi";
 import { MASK_RED, encodeBetById } from "./encode-bets";
-import { ADDR, CASHCAT, NOW, PLAYER, account, asset, fakeChain, fakeReader, game, openRound, round109, treasury } from "./__fixtures__/chain";
+import { ADDR, CASHCAT, NOW, PLAYER, PONS, account, asset, fakeChain, fakeReader, fundedAsset, game, openRound, round109, treasury } from "./__fixtures__/chain";
 import {
   ChainClaimBodySchema,
+  ChainConvertToRewardsBodySchema,
   ChainEnterTableBodySchema,
   ChainLeaveTableBodySchema,
   ChainPlaceBetsBodySchema,
   ChainQuoteBodySchema,
   chainClaimIntent,
+  chainConvertToRewardsIntent,
   chainEnterTableIntent,
   chainHealth,
   chainLeaveTableIntent,
@@ -39,6 +41,7 @@ const lower = PLAYER.toLowerCase();
 const enterBody = (o: Record<string, unknown> = {}) => ChainEnterTableBodySchema.parse({ address: lower, ...o });
 const betsBody = (o: Record<string, unknown> = {}) => ChainPlaceBetsBodySchema.parse({ address: lower, bets: [{ betId: "red", stake: 5 }], ...o });
 const leaveBody = (o: Record<string, unknown> = {}) => ChainLeaveTableBodySchema.parse({ address: lower, ...o });
+const convertBody = (o: Record<string, unknown> = {}) => ChainConvertToRewardsBodySchema.parse({ address: lower, ...o });
 const claimBody = (o: Record<string, unknown> = {}) => ChainClaimBodySchema.parse({ address: lower, asset: "CASHCAT", usdAmount: "1.5", ...o });
 
 /** A chain where a round is open on table 1 and the player has 45 units in escrow. */
@@ -419,6 +422,103 @@ describe("POST /intents/leave-table (chain)", () => {
   });
 });
 
+describe("POST /intents/convert-to-rewards (chain)", () => {
+  it("mainnet today: converts the wallet's 50-chip to a $5 win balance, no approval needed, and says nothing is claimable yet", async () => {
+    const reader = fakeReader();
+    const r = await json(await chainConvertToRewardsIntent(reader, convertBody({ units: 50 })));
+    expect(r.status).toBe(200);
+    expect(r.cache).toBe("no-store");
+    expect(r.body).toMatchObject({ ok: true, demo: false });
+    const d = r.body.data;
+    expect(d.intent).toMatchObject({ to: ADDR.treasury, contract: "CasinoTreasury", chainId: activeChain.id, value: "0", signedBy: "agent-wallet" });
+    const decoded = decodeFunctionData({ abi: casinoTreasuryAbi, data: d.intent.data });
+    expect(decoded.functionName).toBe("convertToRewards");
+    expect(decoded.args).toEqual([[1050n], [1n]]);
+    expect(d).toMatchObject({
+      units: 50,
+      prerequisites: [],
+      chips: [{ denomination: 50, tokenId: "1050", count: 1 }],
+      credit: { usd: 5, usd1e18: "5000000000000000000", chipUsdValue: 0.1 },
+      backing: { wei: "1500000000000000", chipPriceWei: "30000000000000" },
+      oneWay: true,
+      preflight: { chipsApproved: true, claimsPaused: false, walletChipUnitsAfter: 0, winBalanceUsdAfter: 5 },
+      account: { address: PLAYER, walletChipUnits: 50 },
+    });
+    // Zero vault inventory: the conversion is allowed, and the response does not pretend it can be claimed.
+    expect(d.claimableAfter).toHaveLength(2);
+    expect(d.claimableAfter[0]).toMatchObject({ symbol: "CASHCAT", contractAddress: CASHCAT, maxClaimableUsd: 0, blocker: "no-inventory", inventory: "0" });
+    expect(d.warnings).toHaveLength(1);
+    expect(d.warnings[0]).toMatch(/No reward asset can be claimed right now.*could pay \$0/);
+    expect(d.intent.warnings.join(" ")).toMatch(/ONE-WAY/);
+    expect(d.intent.warnings.join(" ")).not.toMatch(/Requires a prior Chip1155/);
+    expect(d.note).toMatch(/One-way/);
+    expect(reader.calls.account).toBe(1);
+  });
+
+  it("returns the approval as a prerequisite when the treasury is not an approved operator, and converts every chip by default", async () => {
+    const state = fakeChain({ account: account({ approved: false, chips: { 1: 3n, 5: 0n, 10: 2n, 25: 0n, 50: 1n, 100: 0n }, chipUnits: 73, winBalanceUsd1e18: 10n ** 18n }), assets: [fundedAsset(CASHCAT, 250n), asset(PONS)] });
+    const d = (await json(await chainConvertToRewardsIntent(fakeReader(state), convertBody()))).body.data;
+    expect(d.units).toBe(73);
+    expect(d.prerequisites).toHaveLength(1);
+    expect(d.prerequisites[0]).toMatchObject({ to: ADDR.chip, contract: "Chip1155" });
+    expect(decodeFunctionData({ abi: chip1155Abi, data: d.prerequisites[0].data }).args).toEqual([ADDR.treasury, true]);
+    expect(decodeFunctionData({ abi: casinoTreasuryAbi, data: d.intent.data }).args).toEqual([[1001n, 1010n, 1050n], [3n, 2n, 1n]]);
+    expect(d.note).toMatch(/^Sign the approval in prerequisites first/);
+    // $1 already held + $7.30 credited = $8.30, all of it claimable as CASHCAT ($40.97 in the vault), none as PONS.
+    expect(d.preflight.winBalanceUsdAfter).toBe(8.3);
+    expect(d.claimableAfter).toMatchObject([
+      { symbol: "CASHCAT", maxClaimableUsd: 8.3, limitedBy: "win-balance", blocker: null, inventoryUsd: 40.97 },
+      { symbol: "PONS", maxClaimableUsd: 0, blocker: "no-inventory" },
+    ]);
+    expect(d.warnings).toEqual([]);
+  });
+
+  it("warns when the vault can pay only part of the resulting win balance", async () => {
+    const d = (await json(await chainConvertToRewardsIntent(fakeReader(fakeChain({ assets: [fundedAsset(CASHCAT, 10n)] })), convertBody({ chips: [{ denomination: 50, count: 1 }] })))).body.data;
+    expect(d.claimableAfter[0]).toMatchObject({ maxClaimableUsd: 1.6388, limitedBy: "inventory" });
+    expect(d.warnings[0]).toMatch(/at most \$1\.6388 in a single asset right now, less than the \$5 win balance/);
+  });
+
+  it("NO_CHIPS, INSUFFICIENT_CHIPS, PAUSED, CONTRACTS_NOT_DEPLOYED and validation", async () => {
+    const run = async (state: ReturnType<typeof fakeChain>, body = convertBody()) => json(await chainConvertToRewardsIntent(fakeReader(state), body));
+    const empty = await run(fakeChain({ account: account({ chips: { 1: 0n, 5: 0n, 10: 0n, 25: 0n, 50: 0n, 100: 0n }, chipUnits: 0 }) }));
+    expect(empty.status).toBe(409);
+    expect(empty.body).toMatchObject({ ok: false, demo: false, error: { code: "NO_CHIPS", details: { account: { walletChipUnits: 0 } } } });
+    expect(empty.body.preview).toBeUndefined();
+    // Chips at a table are not convertible: the error says to leave the table first.
+    const seatedOnly = await run(fakeChain({ account: account({ chips: { 1: 0n, 5: 0n, 10: 0n, 25: 0n, 50: 0n, 100: 0n }, chipUnits: 0, escrowUnits: 45n }) }));
+    expect(seatedOnly.body.error).toMatchObject({ code: "NO_CHIPS", message: expect.stringMatching(/45 chip units are in table escrow.*leave-table/) });
+
+    const tooMany = await run(fakeChain(), convertBody({ units: 60 }));
+    expect(tooMany.body.error).toMatchObject({ code: "INSUFFICIENT_CHIPS", message: expect.stringMatching(/holds 50 chip units, not 60/) });
+    const inexact = await run(fakeChain(), convertBody({ units: 20 }));
+    expect(inexact.body.error).toMatchObject({ code: "INSUFFICIENT_CHIPS", details: { coverableUnits: 0 }, message: expect.stringMatching(/cannot make exactly 20 units.*Omit units to convert every chip/) });
+    expect((await run(fakeChain(), convertBody({ chips: [{ denomination: 25, count: 1 }] }))).body.error.code).toBe("INSUFFICIENT_CHIPS");
+
+    // PAUSE_CLAIMS (4) on the treasury or the vault blocks the conversion; a gameplay pause (2) does not.
+    for (const pause of [{ treasury: 4, game: 0, vault: 0 }, { treasury: 0, game: 0, vault: 4 }]) {
+      expect((await run(fakeChain({ treasury: treasury({ pause }) }))).body.error).toMatchObject({ code: "PAUSED", details: { pause: { claims: true } } });
+    }
+    expect((await run(fakeChain({ treasury: treasury({ pause: { treasury: 2, game: 2, vault: 0 } }) }))).status).toBe(200);
+
+    for (const missing of ["treasury", "chip", "rewardVault"] as const) {
+      const r = await run(fakeChain({ addresses: { ...ADDR, [missing]: null } }));
+      expect(r.status, missing).toBe(409);
+      expect(r.body.error, missing).toMatchObject({ code: "CONTRACTS_NOT_DEPLOYED", details: { contract: missing } });
+    }
+    const down = await run(fakeChain({ down: true }));
+    expect(down.status).toBe(503);
+    expect(down.body.error.code).toBe("CHAIN_UNAVAILABLE");
+
+    expect(ChainConvertToRewardsBodySchema.safeParse({ address: lower, units: 5, chips: [{ denomination: 5, count: 1 }] }).success).toBe(false);
+    expect(ChainConvertToRewardsBodySchema.safeParse({ address: lower, units: 0 }).success).toBe(false);
+    expect(ChainConvertToRewardsBodySchema.safeParse({ address: lower, units: 1.5 }).success).toBe(false);
+    expect(ChainConvertToRewardsBodySchema.safeParse({ address: lower, extra: true }).success).toBe(false);
+    expect(ChainConvertToRewardsBodySchema.safeParse({ units: 5 }).success).toBe(false);
+    expect(ChainConvertToRewardsBodySchema.safeParse({ address: "0x1C01912b96BA6783ae8c3c1D8e135Ee185079aa5", units: 5 }).success).toBe(false);
+  });
+});
+
 describe("POST /intents/claim (chain)", () => {
   const NOW_MS = 1_791_155_809_000;
   /** CASHCAT funded with 250 tokens; the player holds a $3 win balance; quote at $0.16388. */
@@ -430,22 +530,54 @@ describe("POST /intents/claim (chain)", () => {
       ...over,
     });
 
-  it("ASSET_UNAVAILABLE while the vault holds no inventory (mainnet today), before anything else", async () => {
+  it("INSUFFICIENT_INVENTORY while the vault holds none of the asset (mainnet today), with the available amount", async () => {
     const r = await json(await chainClaimIntent(fakeReader(), claimBody()));
     expect(r.status).toBe(409);
-    expect(r.body).toMatchObject({ ok: false, demo: false, error: { code: "ASSET_UNAVAILABLE", details: { asset: { symbol: "CASHCAT", vaultStatus: "UNAVAILABLE", inventory: "0" } } } });
-    expect(r.body.error.message).toMatch(/holds no inventory/);
+    expect(r.body).toMatchObject({
+      ok: false,
+      demo: false,
+      error: {
+        code: "INSUFFICIENT_INVENTORY",
+        details: {
+          asset: { symbol: "CASHCAT", vaultStatus: "UNAVAILABLE", inventory: "0" },
+          available: { inventory: "0", inventoryTokens: 0, usd: 0 },
+          maxClaimableNow: { maxClaimableUsd: 0, maxClaimableUsd1e18: "0", blocker: "no-inventory", limitedBy: null },
+        },
+      },
+    });
+    expect(r.body.error.message).toMatch(/holds no CASHCAT right now/);
+    expect(r.body.error.message).toMatch(/restocked in batches/);
     expect(r.body.preview).toBeUndefined();
+    // The same answer for a wallet that has a win balance: the balance is not the problem.
+    const rich = await json(await chainClaimIntent(fakeReader(fakeChain({ account: account({ winBalanceUsd1e18: 5n * 10n ** 18n }) })), claimBody()));
+    expect(rich.body.error).toMatchObject({ code: "INSUFFICIENT_INVENTORY", details: { account: { winBalanceUsd: 5 } } });
   });
 
-  it("ASSET_UNAVAILABLE for unlisted, unregistered, disabled, stale or under-stocked assets", async () => {
+  it("INSUFFICIENT_INVENTORY when the claim needs more than the vault holds, with what it can pay now", async () => {
+    // 10 CASHCAT at $0.16388 = $1.6388 of inventory; the caller asks for $3 of a $3 balance.
+    const state = funded({ assets: [fundedAsset(CASHCAT, 10n, { vault: { status: 1 } })], quote: { amountOut: 18_306_077_617_769_099_340n, price: 163_880_000_000_000_000n } });
+    const r = await json(await chainClaimIntent(fakeReader(state), claimBody({ usdAmount: "3" })));
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatchObject({
+      code: "INSUFFICIENT_INVENTORY",
+      details: {
+        required: { amountOut: "18306077617769099340", usd: 3 },
+        available: { inventory: "10000000000000000000", inventoryTokens: 10, usd: 1.6388 },
+        maxClaimableNow: { maxClaimableUsd: 1.6388, maxClaimableUsd1e18: "1638800000000000000", maxClaimableUsdAmount: "1.6388", limitedBy: "inventory", blocker: null },
+      },
+    });
+    expect(r.body.error.message).toMatch(/this claim needs 18306077617769099340\. Claim up to \$1\.6388 now/);
+  });
+
+  it("ASSET_UNAVAILABLE for unlisted, unregistered, disabled or unpriced assets", async () => {
     const code = async (state: ReturnType<typeof fakeChain>, body = claimBody()) => (await json(await chainClaimIntent(fakeReader(state), body))).body.error;
     expect(await code(fakeChain(), claimBody({ asset: "stock-nvda" }))).toMatchObject({ code: "ASSET_UNAVAILABLE", details: { asset: { status: "unverified" } } });
     expect((await code(fakeChain({ assets: [] }))).code).toBe("ASSET_UNAVAILABLE");
     expect((await code(funded({ assets: [asset(CASHCAT, { vault: { status: 2, inventory: 10n ** 18n, enabled: false } })] }))).message).toMatch(/not enabled/);
-    expect((await code(funded({ assets: [asset(CASHCAT, { vault: { status: 0, inventory: 10n ** 18n } })] }))).message).toMatch(/price is missing or stale/);
+    // Inventory but status UNAVAILABLE, or no fresh quote price at all: the oracle is the problem, not the stock.
+    expect(await code(funded({ assets: [asset(CASHCAT, { vault: { status: 0, inventory: 10n ** 18n } })] }))).toMatchObject({ code: "ASSET_UNAVAILABLE", message: expect.stringMatching(/price is missing or stale/) });
+    expect(await code(fakeChain({ assets: [asset(CASHCAT, { vault: { priceUsd1e18: undefined } })] }))).toMatchObject({ code: "ASSET_UNAVAILABLE", details: { maxClaimableNow: { blocker: "no-price" } } });
     expect((await code(funded({ quote: null }))).message).toMatch(/could not quote/);
-    expect((await code(funded({ assets: [asset(CASHCAT, { vault: { status: 1, inventory: 10n ** 18n } })] }))).message).toMatch(/this claim needs/);
   });
 
   it("encodes claimAs with minOut from the quote less slippage and a 10 minute deadline, like the web app", async () => {
@@ -460,6 +592,8 @@ describe("POST /intents/claim (chain)", () => {
     expect(decoded.functionName).toBe("claimAs");
     expect(decoded.args).toEqual([CASHCAT, 15n * 10n ** 17n, minOut, deadline]);
     expect(d).toMatchObject({ usdAmount1e18: "1500000000000000000", minOut: minOut.toString(), slippageBps: 50, deadline: deadline.toString(), quote: { amountOut: "9153038808884549670", priceUsd: 0.16388 }, asset: { symbol: "CASHCAT", vaultStatus: "AVAILABLE" } });
+    // The whole $3 win balance is claimable: 250 CASHCAT is worth $40.97.
+    expect(d.maxClaimableNow).toEqual({ maxClaimableUsd: 3, maxClaimableUsd1e18: "3000000000000000000", maxClaimableUsdAmount: "3", limitedBy: "win-balance", blocker: null, inventory: "250000000000000000000", inventoryTokens: 250, inventoryUsd: 40.97 });
     // The asset can be named by address or registry id, and slippage / deadline / minOut can be set.
     const custom = (await json(await chainClaimIntent(fakeReader(funded()), claimBody({ asset: CASHCAT, slippageBps: 100, deadlineMinutes: 20 }), NOW_MS))).body.data;
     expect(custom.minOut).toBe(((9_153_038_808_884_549_670n * 9900n) / 10_000n).toString());
