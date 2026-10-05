@@ -197,5 +197,6 @@ Shared variables: `OPERATOR_PRIVATE_KEY` (a **hot key that holds only OPERATOR_R
 `SCAN_FROM_BLOCK=78563886` and, on a fresh volume, `NEXT_ROUND_ID` (the next unused round id). `prices` needs
 `ORACLE_ADDRESS`. Railway no longer lets new services opt in to config-as-code, so `railway.json` is informational:
 Root Directory, variables and the volume are set in the dashboard (the Dockerfile in the root directory is picked up
-automatically). The repo was added by public URL, so deploys are manual: Settings → Source → "Check for updates". Run exactly ONE round operator at a time: stop the local
+automatically). Railway's GitHub App is installed for `rouletterbh/roulette` only; both services auto-deploy from `main`
+with Watch Paths `agent/operator/**`, so pushes that touch only the website or docs do not restart them. Run exactly ONE round operator at a time: stop the local
 one before the hosted one starts. `bun run convert` stays a local, manual command with the treasurer key.
