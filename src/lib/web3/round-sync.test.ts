@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { keccak256, toHex } from "viem";
 import { deriveResult, type RoundReveal } from "@/lib/fairness/commit-reveal";
 import { RANDOMNESS_STATUS, ROUND_STATUS } from "./contracts";
-import { buildChainCommitment, buildChainReveal, planChainSync, type RandomnessRoundView } from "./round-sync";
+import { buildChainCommitment, buildChainReveal, planChainSync, type RandomnessRoundView, sameTreasury } from "./round-sync";
 
 const serverSeed = toHex(new Uint8Array(32).fill(7));
 const playerSeed = toHex(new Uint8Array(32).fill(9));
@@ -77,5 +77,16 @@ describe("RoundReveal shape", () => {
   it("matches the store's reveal type", () => {
     const r: RoundReveal = reveal;
     expect(typeof r.createdAt).toBe("number");
+  });
+});
+
+describe("sameTreasury", () => {
+  const t = { bankroll: 1000, reservedLiability: 0, claimableRewards: 0, protocolReserve: 11, safetyReserveBps: 1500, maxRoundExposureBps: 2500 };
+  it("compares by value, not identity", () => {
+    expect(sameTreasury(t, { ...t })).toBe(true);
+  });
+  it("detects the empty placeholder a chain table starts from", () => {
+    expect(sameTreasury({ ...t, bankroll: 0, protocolReserve: 0 }, t)).toBe(false);
+    expect(sameTreasury({ ...t, reservedLiability: 5 }, t)).toBe(false);
   });
 });

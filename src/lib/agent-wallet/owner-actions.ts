@@ -1,4 +1,5 @@
-import { getBalance, getTransaction, readContract, sendTransaction, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getBalance, getTransaction, getTransactionReceipt, readContract, sendTransaction, simulateContract, writeContract } from "wagmi/actions";
+import { pollReceipt } from "@/lib/web3/receipt";
 import type { Address, Hex } from "viem";
 import { activeChain } from "@/config/chains";
 import { wagmiConfig } from "@/lib/web3/wagmi";
@@ -20,23 +21,23 @@ import { CHIP_IDS, balancesFromBatch, chip1155Abi, contractAddresses, rouletteGa
  * what is already there, so re-running a half-finished funding never double-funds.
  */
 const chainId = activeChain.id;
-const RECEIPT_TIMEOUT_MS = 90_000;
 
 async function track(report: TxReporter, write: () => Promise<Hex>): Promise<Hex> {
   report("confirm-wallet");
   const hash = await write();
   report("submitted", { hash });
   report("confirming", { hash });
-  let receipt;
-  try {
-    receipt = await waitForTransactionReceipt(wagmiConfig, { hash, chainId, confirmations: 1, timeout: RECEIPT_TIMEOUT_MS });
-  } catch (e) {
-    const known = await getTransaction(wagmiConfig, { hash, chainId }).then(() => true, () => false);
-    if (!known) throw new TxError("dropped", "The network never saw this transaction. Your wallet may not have broadcast it; nothing was charged. Try again.");
-    if (e instanceof Error && /timed out|timeout/i.test(e.message)) throw new TxError("timeout", "Still waiting for the network to include this transaction. Check the explorer link before retrying.");
-    throw e;
+  const outcome = await pollReceipt(hash, {
+    getReceipt: (h) => getTransactionReceipt(wagmiConfig, { hash: h, chainId }),
+    isKnown: (h) => getTransaction(wagmiConfig, { hash: h, chainId }).then(() => true, () => false),
+  });
+  if (outcome.kind === "timeout") {
+    // A wallet can return a hash for a transaction that never reaches the network (seen on mainnet: the
+    // node did not know the hash and the nonce never advanced). Say so instead of spinning forever.
+    if (!outcome.known) throw new TxError("dropped", "The network never saw this transaction. Your wallet may not have broadcast it; nothing was charged. Try again.");
+    throw new TxError("timeout", "Still waiting for the network to include this transaction. Check the explorer link before retrying.");
   }
-  if (receipt.status !== "success") throw new TxError("reverted", "Transaction reverted on chain.");
+  if (outcome.status !== "success") throw new TxError("reverted", "Transaction reverted on chain.");
   return hash;
 }
 

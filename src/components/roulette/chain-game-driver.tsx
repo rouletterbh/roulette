@@ -11,7 +11,7 @@ import { checkWager } from "@/lib/risk/engine";
 import { useChipApproval, useChipBalances, useCurrentRound, useEscrow, useRandomnessRound, useTreasurySnapshot } from "@/lib/web3/hooks";
 import { enterTableUnits, leaveTable as leaveTableTx, placeBets as placeBetsTx } from "@/lib/web3/actions";
 import { useTxFlow } from "@/lib/web3/use-tx-flow";
-import { buildChainCommitment, buildChainReveal, chainStatusLabel, planChainSync } from "@/lib/web3/round-sync";
+import { buildChainCommitment, buildChainReveal, chainStatusLabel, planChainSync, sameTreasury } from "@/lib/web3/round-sync";
 import { BETTING_WINDOW_SECONDS, PAUSE_FLAGS, ROUND_STATUS, contractAddresses, gameContractsReady, resolveChainTableId, selectChips, type ChipBalances } from "@/lib/web3/contracts";
 import { TransactionModal } from "@/components/cashier/transaction-modal";
 import { Button } from "@/components/ui/button";
@@ -93,9 +93,14 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
   });
 
   // (1) Treasury → store, in chip units, so the local risk engine mirrors RiskEngine.checkWager.
+  //     Keyed on the STORE value too: GameTable's own init effect runs after this one and resets the
+  //     treasury, and with a cached snapshot (arriving from another page) `treasury.snapshot` never
+  //     changes again, which left every limit at zero ("Table limit reached" on every chip).
+  const storeTreasury = useGame((s) => s.treasury);
   useEffect(() => {
-    if (treasury.snapshot) useGame.setState({ treasury: treasury.snapshot });
-  }, [treasury.snapshot]);
+    const snap = treasury.snapshot;
+    if (snap && !sameTreasury(storeTreasury, snap)) useGame.setState({ treasury: snap });
+  }, [treasury.snapshot, storeTreasury]);
 
   // (2) Escrow → table balance. Skipped while a round is in flight: the local settlement math owns
   //     the balance until the wheel lands, then the re-read below reconciles it with the chain.

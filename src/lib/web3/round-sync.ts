@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 import type { Phase } from "@/store/game";
 import type { RoundCommitment, RoundReveal } from "@/lib/fairness/commit-reveal";
 import { verifyRound } from "@/lib/fairness/commit-reveal";
+import type { TreasurySnapshot } from "@/lib/risk/engine";
 import { RANDOMNESS_STATUS, ROUND_STATUS, type ChainRoundStatus } from "./contracts";
 
 /**
@@ -121,4 +122,16 @@ export function chainStatusLabel(status: ChainRoundStatus, hasRound: boolean): s
     default:
       return "Waiting for the operator to open a round";
   }
+}
+
+/** Field-wise equality of two treasury snapshots (the store keeps its own object, so identity is useless). */
+export function sameTreasury(a: TreasurySnapshot, b: TreasurySnapshot): boolean {
+  return (
+    a.bankroll === b.bankroll &&
+    a.reservedLiability === b.reservedLiability &&
+    a.claimableRewards === b.claimableRewards &&
+    a.protocolReserve === b.protocolReserve &&
+    a.safetyReserveBps === b.safetyReserveBps &&
+    a.maxRoundExposureBps === b.maxRoundExposureBps
+  );
 }

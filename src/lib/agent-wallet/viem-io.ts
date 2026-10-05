@@ -3,6 +3,7 @@ import type { ContractBet } from "@/lib/agent/encode-bets";
 import { CHIP_IDS, PAUSE_FLAGS, ROUND_SCAN_BLOCKS, ROUND_STATUS, balancesFromBatch, casinoTreasuryAbi, chip1155Abi, chipUnits, randomnessManagerAbi, rewardVaultAbi, rouletteGameAbi, type ChainRoundStatus } from "@/lib/web3/contracts";
 import { toTxError } from "@/lib/web3/errors";
 import { ContractRejected, OutOfGas, type AgentChainIO, type AgentRound, type AgentRoundBet, type AgentSnapshot, type ReceiptState, type TableLimits } from "./chain-io";
+import { pollReceipt } from "@/lib/web3/receipt";
 
 /**
  * AgentChainIO over viem. Reads go through a public client on the public RPC; writes
@@ -251,8 +252,14 @@ export function createViemAgentIO(o: ViemIOOptions): AgentChainIO {
     },
 
     async wait(hash: Hex) {
-      const r = await pub.waitForTransactionReceipt({ hash, confirmations: 1, timeout: o.receiptTimeoutMs ?? 90_000 });
-      return r.status === "success" ? "success" : "reverted";
+      // One light request per tick (see lib/web3/receipt.ts): viem's own wait fans out per missed block on this chain.
+      const out = await pollReceipt(hash, {
+        timeoutMs: o.receiptTimeoutMs ?? 90_000,
+        getReceipt: (h) => pub.getTransactionReceipt({ hash: h }),
+        isKnown: (h) => pub.getTransaction({ hash: h }).then(() => true, () => false),
+      });
+      if (out.kind === "timeout") throw new Error(out.known ? "Timed out waiting for the transaction to be included" : "Transaction could not be found on the network");
+      return out.status;
     },
   };
 }
