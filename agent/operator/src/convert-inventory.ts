@@ -8,13 +8,22 @@
  *   - `rewardInventory`  the 20% share of every deposit.                 → CasinoTreasury.withdrawRewardInventory
  *
  *   1. draw the bucket(s) to the treasurer wallet                        TREASURER_ROLE
- *   2. Uniswap v3 SwapRouter02.exactInputSingle{value}  ETH → asset      (per asset, best fee tier by quote)
+ *   2. buy the asset with ETH on its VENUE (per asset):
+ *        uniswap-v3   SwapRouter02.exactInputSingle{value}  ETH → asset   (best fee tier by QuoterV2)   CASHCAT, PONS, AI
+ *        pons-curve   PonsV2BondingCurve.buy{value: amountIn}(amountIn, minOut, treasurer)              RBL
+ *                     The curve is resolved through PonsV2LaunchFactory.getLaunchedToken(asset).curve; the quote
+ *                     is an eth_call of the same `buy` with value (minOut 0) from the treasurer. The curve's
+ *                     slippage check is a RATE check (`spent × minOut > received × tokensOut` reverts), so a
+ *                     fill clamped to `sellableTokens()` with an ETH refund still passes when the rate holds.
+ *                     Once `graduated()` is true the asset is skipped with a log: liquidity has moved to a
+ *                     Uniswap v4 pool and no venue exists for it here yet. Nothing is guessed.
  *   3. asset.approve(vault) + RewardVault.fundInventory(asset, amount)   TREASURER_ROLE
  *
- * Sizing: first buy what covers outstanding win balances. Target per asset = totalWinBalance ÷ number of
- * enabled assets, valued at the posted oracle price, minus what the vault already holds, floored at 0.
- * The budget fills those shortfalls first (pro rata when it cannot cover them all), then whatever is left is
- * split by WEIGHTS. Every run logs the coverage ratio
+ * Sizing: first buy what covers outstanding win balances. Target per asset = totalWinBalance × its share of
+ * WEIGHTS (over the assets being bought; default RBL=40, CASHCAT=20, PONS=20, AI=20), valued at the posted
+ * oracle price, minus what the vault already holds, floored at 0. The budget fills those shortfalls first (pro
+ * rata when it cannot cover them all), then whatever is left is split by the same WEIGHTS. Every run logs the
+ * coverage ratio
  *   (vault inventory value + claimable ETH value + rewardInventory ETH value) ÷ totalWinBalance
  * and warns below 100%: a win balance is USD at the chip peg while its backing is ETH at the chip price.
  *
@@ -22,7 +31,7 @@
  * The key must hold TREASURER_ROLE (the run refuses otherwise); a dry run needs no key.
  *
  * Env: RPC_URL, CHAIN_ID (4663), TREASURY_ADDRESS, VAULT_ADDRESS, OPERATOR_PRIVATE_KEY (treasurer key; optional for dry run)
- * Optional: SOURCE (both | claimable | inventory; default both), WEIGHTS ("CASHCAT=50,PONS=25,AI=25"; default equal),
+ * Optional: SOURCE (both | claimable | inventory; default both), WEIGHTS ("RBL=40,CASHCAT=20,PONS=20,AI=20", the default),
  *           AMOUNT_WEI (convert at most this much in total, claimable first; default everything drawable),
  *           MIN_CLAIMABLE_WEI (do not draw `claimable` below this; default 0.0005 ETH),
  *           MIN_INVENTORY_WEI (do not draw the whole `rewardInventory` bucket below this; default 0.004 ETH ≈ $10. Below it,
@@ -30,7 +39,10 @@
  *           MIN_SWAP_WEI (slices under this are folded into the largest slice; default 0.00005 ETH),
  *           SLIPPAGE_BPS (100), MAX_DEVIATION_BPS (500: pool quote must be within 5% of the oracle-implied amount, using
  *           CoinGecko ETH/USD), ORACLE_ADDRESS (default: the vault's registered oracle), ROUTER_ADDRESS / QUOTER_ADDRESS /
- *           FACTORY_ADDRESS (defaults: official Uniswap v3 on chain 4663), STATE_DIR (./state), INTERVAL_SEC (300, with --loop)
+ *           FACTORY_ADDRESS (defaults: official Uniswap v3 on chain 4663), PONS_FACTORY_ADDRESS (default: PonsV2LaunchFactory on
+ *           4663), TREASURY_SIM_ACCOUNT (dry run without a key: the `from` for the simulated curve buy, which needs ETH; default
+ *           the ADMIN wallet), PROBE_WEI (dry run: ETH used to quote a venue for an asset that is not registered on the vault yet;
+ *           default 0.0005 ETH; nothing is ever bought for it), STATE_DIR (./state), INTERVAL_SEC (300, with --loop)
  * Flags: --execute, --resume (continue a conversion whose swaps did not finish; the drawn ETH is still in the wallet),
  *        --loop (repeat every INTERVAL_SEC; "nothing to do" and failed runs never exit; an unfinished conversion is resumed)
  *
@@ -69,6 +81,7 @@ import {
   shortfallsWei,
   splitByWeight,
   splitProportional,
+  targetsUsd,
   tokenValueUsd,
   weiToUsd,
 } from "./convert-math";
@@ -88,12 +101,17 @@ const chain = defineChain({
   rpcUrls: { default: { http: [rpc] } },
 });
 
-const ASSETS = [
-  { symbol: "CASHCAT", address: getAddress("0x020bfC650A365f8BB26819deAAbF3E21291018b4") },
-  { symbol: "PONS", address: getAddress("0x39dBED3a2bd333467115dE45665cC57F813C4571") },
-  { symbol: "AI", address: getAddress("0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18") },
-] as const;
+type Venue = "uniswap-v3" | "pons-curve";
+const ASSETS: ReadonlyArray<{ symbol: string; address: Address; venue: Venue }> = [
+  // Roblette (RBL): trades only on its Pons V2 launch curve until graduation (no Uniswap pool).
+  { symbol: "RBL", address: getAddress("0x041f48E1C2855be1287B94363f4f3D8585ceCCdc"), venue: "pons-curve" },
+  { symbol: "CASHCAT", address: getAddress("0x020bfC650A365f8BB26819deAAbF3E21291018b4"), venue: "uniswap-v3" },
+  { symbol: "PONS", address: getAddress("0x39dBED3a2bd333467115dE45665cC57F813C4571"), venue: "uniswap-v3" },
+  { symbol: "AI", address: getAddress("0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18"), venue: "uniswap-v3" },
+];
 const SYMBOLS = ASSETS.map((a) => a.symbol);
+/** Default WEIGHTS: the project token takes the largest share of win-balance coverage and of any surplus. */
+const WEIGHTS_DEFAULT = { RBL: 40, CASHCAT: 20, PONS: 20, AI: 20 } as const;
 
 // Uniswap v3 on Robinhood Chain mainnet (official deployments list, verified by bytecode 2026-10-03).
 // WETH9 is read from the router at runtime and must match the configured value.
@@ -105,19 +123,26 @@ const UNISWAP_4663 = {
 };
 const FEE_TIERS = [500, 3000, 10000] as const;
 
+// Pons V2 launchpad on Robinhood Chain mainnet (factory verified on Blockscout; curves are deployed by it).
+const PONS_FACTORY_4663 = getAddress("0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e");
+/** ADMIN wallet: holds ETH, so a dry run without a key can simulate a curve buy from it (simulation only, never a sender). */
+const ADMIN_WALLET = getAddress("0xC80D34d68bAB225890958Cd3326d89030713689c");
+
 const treasuryAddress = requireAddress("TREASURY_ADDRESS");
 const vaultAddress = requireAddress("VAULT_ADDRESS");
 const router = optAddress("ROUTER_ADDRESS") ?? (chainId === 4663 ? UNISWAP_4663.router : undefined);
 const quoter = optAddress("QUOTER_ADDRESS") ?? (chainId === 4663 ? UNISWAP_4663.quoter : undefined);
 const factory = optAddress("FACTORY_ADDRESS") ?? (chainId === 4663 ? UNISWAP_4663.factory : undefined);
 if (!router || !quoter || !factory) throw new Error("ROUTER_ADDRESS, QUOTER_ADDRESS and FACTORY_ADDRESS are required off chain 4663");
-const weights = parseWeights(process.env.WEIGHTS, SYMBOLS, 1);
+const ponsFactory = optAddress("PONS_FACTORY_ADDRESS") ?? (chainId === 4663 ? PONS_FACTORY_4663 : undefined);
+const weights = parseWeights(process.env.WEIGHTS, SYMBOLS, WEIGHTS_DEFAULT);
 const source = parseSource(process.env.SOURCE);
 const minInventoryWei = BigInt(process.env.MIN_INVENTORY_WEI ?? parseUnits("0.004", 18).toString());
 // Claimable ETH is owed to players as rewards, so it is drawn at a much lower floor than the inventory bucket.
 const minClaimableWei = BigInt(process.env.MIN_CLAIMABLE_WEI ?? parseUnits("0.0005", 18).toString());
 const minSwapWei = BigInt(process.env.MIN_SWAP_WEI ?? parseUnits("0.00005", 18).toString());
 const amountCap = process.env.AMOUNT_WEI ? BigInt(process.env.AMOUNT_WEI) : null;
+const probeWei = BigInt(process.env.PROBE_WEI ?? parseUnits("0.0005", 18).toString());
 const slippageBps = Number(process.env.SLIPPAGE_BPS ?? 100);
 const maxDeviationBps = Number(process.env.MAX_DEVIATION_BPS ?? 500);
 const stateDir = resolve(process.env.STATE_DIR ?? join(import.meta.dir, "..", "state"));
@@ -169,6 +194,18 @@ const quoterAbi = parseAbi([
   "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
 ]);
 const factoryAbi = parseAbi(["function getPool(address a, address b, uint24 fee) view returns (address)"]);
+const ponsFactoryAbi = parseAbi([
+  "function getLaunchedToken(address token) view returns ((address token, address curve, address deployer, address creatorFeeRecipient, address pairToken, uint256 graduationThreshold, uint24 poolFee, int24 tickSpacing, uint16 creatorTaxBps, bool buybackEnabled, uint8 phase, uint256 sweptQuote, uint256 sweptTokens, uint256 sweptAt, bool exists))",
+]);
+const ponsCurveAbi = parseAbi([
+  "function buy(uint256 quoteIn, uint256 minTokensOut, address recipient) payable returns (uint256 tokensOut)",
+  "function getReserves() view returns (uint256 quoteReserve, uint256 tokenReserve)",
+  "function graduated() view returns (bool)",
+  "function isNativeQuote() view returns (bool)",
+  "function token() view returns (address)",
+  "function feeBps() view returns (uint256)",
+  "function sellableTokens() view returns (uint256)",
+]);
 
 // ------------------------------------------------------------------ clients
 
@@ -177,6 +214,8 @@ const pk = process.env.OPERATOR_PRIVATE_KEY as Hex | undefined;
 if (execute && (!pk || !/^0x[0-9a-fA-F]{64}$/.test(pk))) throw new Error("OPERATOR_PRIVATE_KEY missing or malformed (keystore decrypt failed?) — refusing to execute");
 const account = pk && /^0x[0-9a-fA-F]{64}$/.test(pk) ? privateKeyToAccount(pk) : null;
 const wallet = account ? createWalletClient({ account, chain, transport: http(rpc) }) : null;
+/** `from` for simulated curve buys: the treasurer when a key is present, else TREASURY_SIM_ACCOUNT / the ADMIN wallet (it holds ETH). Simulation only. */
+const simAccount: Address = account?.address ?? optAddress("TREASURY_SIM_ACCOUNT") ?? ADMIN_WALLET;
 
 const log = (event: string, fields: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...fields }, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
@@ -203,7 +242,8 @@ interface Conversion {
   /** Planned ETH per asset, so a resumed run spends what the original run sized. */
   plan?: Record<string, string>;
   remainingWei: string;
-  swaps: Record<string, { amountInWei: string; amountOut: string; fee: number; swapTx: Hex; fundTx: Hex | null }>;
+  /** Per asset: the venue it was bought on (absent on records written before venues existed: uniswap-v3), the pool fee tier or the curve's feeBps, and the curve address for pons-curve. */
+  swaps: Record<string, { venue?: Venue; curve?: Address; amountInWei: string; amountOut: string; fee: number; swapTx: Hex; fundTx: Hex | null }>;
   done: boolean;
 }
 interface Record_ { version: 1; conversions: Conversion[] }
@@ -245,6 +285,30 @@ async function bestQuote(weth: Address, token: Address, amountIn: bigint) {
   return best;
 }
 
+/** Resolve the Pons launch curve for `token`; null (with a reason) when it cannot be bought there. */
+async function resolveCurve(token: Address): Promise<{ curve: Address; feeBps: bigint } | { curve: null; reason: string }> {
+  if (!ponsFactory) return { curve: null, reason: "PONS_FACTORY_ADDRESS is required off chain 4663" };
+  const launch = await pub.readContract({ address: ponsFactory, abi: ponsFactoryAbi, functionName: "getLaunchedToken", args: [token] });
+  if (!launch.exists) return { curve: null, reason: `not launched on PonsV2LaunchFactory ${ponsFactory}` };
+  const curve = getAddress(launch.curve);
+  const [graduated, native, curveToken, feeBps] = await Promise.all([
+    pub.readContract({ address: curve, abi: ponsCurveAbi, functionName: "graduated" }),
+    pub.readContract({ address: curve, abi: ponsCurveAbi, functionName: "isNativeQuote" }),
+    pub.readContract({ address: curve, abi: ponsCurveAbi, functionName: "token" }),
+    pub.readContract({ address: curve, abi: ponsCurveAbi, functionName: "feeBps" }),
+  ]);
+  if (curveToken.toLowerCase() !== token.toLowerCase()) return { curve: null, reason: `curve ${curve} is for ${curveToken}, not ${token}` };
+  if (graduated) return { curve: null, reason: `GRADUATED: curve ${curve} has graduated, liquidity moved to a Uniswap v4 pool; no venue is configured for it yet, so nothing is bought and the relay stops pricing it` };
+  if (!native) return { curve: null, reason: `curve ${curve} is not quoted in native ETH (pairToken ${launch.pairToken})` };
+  return { curve, feeBps };
+}
+
+/** Quote a curve buy by simulating `buy(amountIn, 0, recipient)` with `value: amountIn` from `from` (eth_call; nothing is sent). */
+async function curveQuote(curve: Address, amountIn: bigint, from: Address): Promise<bigint> {
+  const { result } = await pub.simulateContract({ account: from, address: curve, abi: ponsCurveAbi, functionName: "buy", args: [amountIn, 0n, from], value: amountIn });
+  return result;
+}
+
 // --------------------------------------------------------------------- main
 
 type RunResult = "nothing-to-do" | "dry-run" | "done";
@@ -273,13 +337,27 @@ async function preflight(): Promise<{ weth: Address }> {
 }
 
 async function runOnce(weth: Address): Promise<RunResult> {
-  // Which assets are registered, and which oracle prices them.
-  const assets: Array<{ symbol: string; address: Address; decimals: number; oracle: Address; weight: number; priceUsd: bigint; priceUpdatedAt: bigint; inventory: bigint }> = [];
+  // Which assets are registered, which oracle prices them, and where each one is bought.
+  type VenueInfo = { venue: "uniswap-v3" } | { venue: "pons-curve"; curve: Address; feeBps: bigint };
+  const assets: Array<{ symbol: string; address: Address; venue: VenueInfo; decimals: number; oracle: Address; weight: number; priceUsd: bigint; priceUpdatedAt: bigint; inventory: bigint }> = [];
+  /** Dry run only: curve assets the vault does not know yet, quoted with PROBE_WEI so the venue is visible before registration. */
+  const probes: Array<{ symbol: string; address: Address; curve: Address; feeBps: bigint; reason: string }> = [];
   for (const a of ASSETS) {
     const cfg = await pub.readContract({ address: vaultAddress, abi: vaultAbi, functionName: "assetConfig", args: [a.address] });
     const w = weights.find((x) => x.symbol === a.symbol)!.weight;
+    let venue: VenueInfo = { venue: "uniswap-v3" };
+    if (a.venue === "pons-curve") {
+      const r = await resolveCurve(a.address);
+      if (!r.curve) {
+        log("asset.skipped", { symbol: a.symbol, venue: a.venue, reason: r.reason });
+        continue;
+      }
+      venue = { venue: "pons-curve", curve: r.curve, feeBps: r.feeBps };
+    }
     if (cfg.oracle === ZERO || !cfg.enabled) {
-      log("asset.skipped", { symbol: a.symbol, reason: cfg.enabled ? "not registered on the vault" : "disabled on the vault" });
+      const reason = cfg.oracle === ZERO ? "not registered on the vault (ADMIN: contracts/script/RegisterRbl.s.sol)" : "disabled on the vault";
+      log("asset.skipped", { symbol: a.symbol, venue: a.venue, reason });
+      if (!execute && venue.venue === "pons-curve") probes.push({ symbol: a.symbol, address: a.address, curve: venue.curve, feeBps: venue.feeBps, reason });
       continue;
     }
     if (w === 0) {
@@ -293,9 +371,13 @@ async function runOnce(weth: Address): Promise<RunResult> {
       pub.readContract({ address: vaultAddress, abi: vaultAbi, functionName: "inventory", args: [a.address] }),
     ]);
     if (priceUsd === 0n) throw new Error(`${a.symbol}: oracle has no price; run the relay first`);
-    assets.push({ ...a, decimals, oracle, weight: w, priceUsd, priceUpdatedAt, inventory });
+    assets.push({ symbol: a.symbol, address: a.address, venue, decimals, oracle, weight: w, priceUsd, priceUpdatedAt, inventory });
   }
-  if (!assets.length) throw new Error("no registered assets with a positive weight");
+  if (!assets.length && !probes.length) throw new Error("no registered assets with a positive weight");
+  if (!assets.length) {
+    await probeVenues(probes, await ethUsd1e18());
+    throw new Error("no registered assets with a positive weight");
+  }
 
   // Treasury buckets, what is owed, and the peg.
   const t = { address: treasuryAddress, abi: treasuryAbi } as const;
@@ -342,8 +424,10 @@ async function runOnce(weth: Address): Promise<RunResult> {
     log("coverage.WARNING", { ratio: pct(cover), uncoveredUsd: usd(gap), note: "outstanding win balances exceed the vault inventory plus both reward buckets at the current ETH price; the shortfall has to come from deposits' reward share or the treasurer" });
   }
 
-  // Shortfall per asset: target = totalWinBalance / assets, less what the vault holds, floored at 0.
-  const shortUsd = shortfallsUsd(totalWin, positions);
+  // Shortfall per asset: target = totalWinBalance × WEIGHT share (over the assets being bought), less what the vault holds, floored at 0.
+  const buying = assets.map((a) => ({ symbol: a.symbol, weight: a.weight }));
+  const targets = targetsUsd(totalWin, positions, buying);
+  const shortUsd = shortfallsUsd(totalWin, positions, buying);
   const needWei = shortfallsWei(shortUsd, eth, slippageBps);
   const totalNeed = [...needWei.values()].reduce((s, v) => s + v, 0n);
 
@@ -391,12 +475,13 @@ async function runOnce(weth: Address): Promise<RunResult> {
     if (d.inventoryWei > 0n) draws.push({ source: "inventory", fn: "withdrawRewardInventory", amount: d.inventoryWei });
     const alloc = allocateBudget(amount, needWei, assets.map((a) => ({ symbol: a.symbol, weight: a.weight })), minSwapWei);
     slices = new Map([...alloc].map(([k, v]) => [k, v.totalWei]));
-    const target = totalWin / BigInt(assets.length);
+    const weightSum = buying.reduce((s, b) => s + b.weight, 0);
     for (const a of assets) {
       const al = alloc.get(a.symbol)!;
       log("sizing", {
         symbol: a.symbol,
-        targetUsd: usd(target),
+        share: weightSum > 0 ? `${a.weight}/${weightSum}` : "0",
+        targetUsd: usd(targets.get(a.symbol) ?? 0n),
         vaultHoldsUsd: usd(tokenValueUsd(a.inventory, a.priceUsd, a.decimals)),
         shortfallUsd: usd(shortUsd.get(a.symbol) ?? 0n),
         shortfallEthWithSlippage: formatEther(needWei.get(a.symbol) ?? 0n),
@@ -408,8 +493,8 @@ async function runOnce(weth: Address): Promise<RunResult> {
     if (amount < totalNeed) log("sizing.WARNING", { budgetEth: formatEther(amount), shortfallEth: formatEther(totalNeed), note: "the drawable buckets do not cover the win-balance shortfall; it is filled pro rata and the rest stays unclaimable until the buckets grow" });
   }
 
-  // Plan: best pool per asset, oracle cross-check.
-  const plan: Array<{ a: (typeof assets)[number]; amountIn: bigint; fee: number; pool: Address; quoted: bigint; min: bigint; expected: bigint; diffBps: number }> = [];
+  // Plan: best venue quote per asset, oracle cross-check.
+  const plan: Array<{ a: (typeof assets)[number]; amountIn: bigint; fee: number; venue: Venue; at: Address; quoted: bigint; min: bigint; expected: bigint; diffBps: number }> = [];
   for (const a of assets) {
     if (conv?.swaps[a.symbol]) {
       log("asset.alreadySwapped", { symbol: a.symbol, ...conv.swaps[a.symbol] });
@@ -417,20 +502,31 @@ async function runOnce(weth: Address): Promise<RunResult> {
     }
     const amountIn = slices.get(a.symbol) ?? 0n;
     if (amountIn === 0n) continue;
-    const q = await bestQuote(weth, a.address, amountIn);
-    if (!q) throw new Error(`${a.symbol}: no Uniswap v3 WETH pool with liquidity`);
+    let q: { out: bigint; fee: number; at: Address };
+    if (a.venue.venue === "pons-curve") {
+      q = { out: await curveQuote(a.venue.curve, amountIn, simAccount), fee: Number(a.venue.feeBps), at: a.venue.curve };
+      if (q.out === 0n) throw new Error(`${a.symbol}: curve ${a.venue.curve} quoted 0 tokens`);
+    } else {
+      const best = await bestQuote(weth, a.address, amountIn);
+      if (!best) throw new Error(`${a.symbol}: no Uniswap v3 WETH pool with liquidity`);
+      q = { out: best.out, fee: best.fee, at: best.pool };
+    }
     const ageSec = Math.floor(Date.now() / 1000) - Number(a.priceUpdatedAt);
     const expected = expectedOut(amountIn, eth, a.priceUsd, a.decimals);
     const diff = bpsDiff(q.out, expected);
+    // Oracle cross-check. For uniswap-v3 it catches a thin or manipulated pool against an independent (CoinGecko) price.
+    // For pons-curve the posted price comes from the SAME curve (relay source pons-curve), so this bounds price impact,
+    // fee and oracle staleness of this buy rather than a venue mismatch: a quote more than MAX_DEVIATION_BPS below the
+    // last posted marginal price means the buy is too large for the curve or the post is stale. Either way, abort.
     if (!quoteWithinBound(q.out, expected, maxDeviationBps)) {
-      throw new Error(`${a.symbol}: pool quote ${formatUnits(q.out, a.decimals)} is ${(diff / 100).toFixed(2)}% vs oracle-implied ${formatUnits(expected, a.decimals)} (limit -${maxDeviationBps / 100}%); aborting`);
+      throw new Error(`${a.symbol}: ${a.venue.venue} quote ${formatUnits(q.out, a.decimals)} is ${(diff / 100).toFixed(2)}% vs oracle-implied ${formatUnits(expected, a.decimals)} (limit -${maxDeviationBps / 100}%); aborting`);
     }
-    plan.push({ a, amountIn, fee: q.fee, pool: q.pool, quoted: q.out, min: minOut(q.out, slippageBps), expected, diffBps: diff });
+    plan.push({ a, amountIn, fee: q.fee, venue: a.venue.venue, at: q.at, quoted: q.out, min: minOut(q.out, slippageBps), expected, diffBps: diff });
     log("plan.asset", {
       symbol: a.symbol,
+      venue: a.venue.venue,
       amountInEth: formatEther(amountIn),
-      pool: q.pool,
-      fee: q.fee,
+      ...(a.venue.venue === "pons-curve" ? { curve: q.at, curveFeeBps: q.fee } : { pool: q.at, fee: q.fee }),
       quoted: formatUnits(q.out, a.decimals),
       minOut: formatUnits(minOut(q.out, slippageBps), a.decimals),
       oracleUsd: formatUnits(a.priceUsd, 18),
@@ -438,7 +534,8 @@ async function runOnce(weth: Address): Promise<RunResult> {
       vsOracleBps: diff,
     });
   }
-  log("plan", { ethUsd: formatUnits(eth, 18), totalEth: formatEther(amount), draws: draws.map((d) => `${d.fn}(${formatEther(d.amount)} ETH)`), assets: plan.length, slippageBps, maxDeviationBps, execute });
+  if (probes.length) await probeVenues(probes, eth);
+  log("plan", { ethUsd: formatUnits(eth, 18), totalEth: formatEther(amount), draws: draws.map((d) => `${d.fn}(${formatEther(d.amount)} ETH)`), assets: plan.length, venues: plan.map((p) => `${p.a.symbol}:${p.venue}`), slippageBps, maxDeviationBps, execute });
   if (!execute) {
     console.log("dry run: nothing sent. Re-run with --execute (and a key that holds TREASURER_ROLE) to draw, swap and fund.");
     return "dry-run";
@@ -471,23 +568,33 @@ async function runOnce(weth: Address): Promise<RunResult> {
     const walletEth = await pub.getBalance({ address: account.address });
     if (walletEth < p.amountIn + parseUnits("0.0005", 18)) throw new Error(`wallet ETH ${formatEther(walletEth)} cannot cover ${formatEther(p.amountIn)} + gas`);
     const before = await pub.readContract({ address: p.a.address, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
-    const swapSim = await pub.simulateContract({
-      account,
-      address: router,
-      abi: routerAbi,
-      functionName: "exactInputSingle",
-      args: [{ tokenIn: weth, tokenOut: p.a.address, fee: p.fee, recipient: account.address, amountIn: p.amountIn, amountOutMinimum: p.min, sqrtPriceLimitX96: 0n }],
-      value: p.amountIn,
-    });
-    const swapTx = await wallet.writeContract(swapSim.request);
+    let swapTx: Hex;
+    if (p.venue === "pons-curve") {
+      // Re-check graduation right before sending: a graduated curve reverts CurveGraduated(), but say why first.
+      if (await pub.readContract({ address: p.at, abi: ponsCurveAbi, functionName: "graduated" })) throw new Error(`${p.a.symbol}: curve ${p.at} graduated since the plan was made; not buying`);
+      // buy{value: amountIn}(amountIn, minOut, treasurer). minOut is a rate floor (see header): a clamped fill with a refund is accepted when the rate holds.
+      const buySim = await pub.simulateContract({ account, address: p.at, abi: ponsCurveAbi, functionName: "buy", args: [p.amountIn, p.min, account.address], value: p.amountIn });
+      swapTx = await wallet.writeContract(buySim.request);
+    } else {
+      const swapSim = await pub.simulateContract({
+        account,
+        address: router,
+        abi: routerAbi,
+        functionName: "exactInputSingle",
+        args: [{ tokenIn: weth, tokenOut: p.a.address, fee: p.fee, recipient: account.address, amountIn: p.amountIn, amountOutMinimum: p.min, sqrtPriceLimitX96: 0n }],
+        value: p.amountIn,
+      });
+      swapTx = await wallet.writeContract(swapSim.request);
+    }
     const swapRc = await pub.waitForTransactionReceipt({ hash: swapTx });
-    if (swapRc.status !== "success") throw new Error(`${p.a.symbol}: swap reverted ${swapTx}`);
+    if (swapRc.status !== "success") throw new Error(`${p.a.symbol}: ${p.venue} buy reverted ${swapTx}`);
     const after = await pub.readContract({ address: p.a.address, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
     const received = after - before;
+    // A curve fill clamped to sellableTokens() refunds the unspent ETH; the record keeps the planned amountIn (what left the budget) and the leftover stays in the wallet, reported at the end.
     conv.remainingWei = (BigInt(conv.remainingWei) - p.amountIn).toString();
-    conv.swaps[p.a.symbol] = { amountInWei: p.amountIn.toString(), amountOut: received.toString(), fee: p.fee, swapTx, fundTx: null };
+    conv.swaps[p.a.symbol] = { venue: p.venue, ...(p.venue === "pons-curve" ? { curve: p.at } : {}), amountInWei: p.amountIn.toString(), amountOut: received.toString(), fee: p.fee, swapTx, fundTx: null };
     saveRecord(record);
-    log("swapped", { symbol: p.a.symbol, amountInEth: formatEther(p.amountIn), received: formatUnits(received, p.a.decimals), tx: swapTx, block: swapRc.blockNumber });
+    log("swapped", { symbol: p.a.symbol, venue: p.venue, at: p.at, amountInEth: formatEther(p.amountIn), received: formatUnits(received, p.a.decimals), tx: swapTx, block: swapRc.blockNumber });
     if (received === 0n) throw new Error(`${p.a.symbol}: swap succeeded but balance did not change`);
 
     const allowance = await pub.readContract({ address: p.a.address, abi: erc20Abi, functionName: "allowance", args: [account.address, vaultAddress] });
@@ -510,6 +617,44 @@ async function runOnce(weth: Address): Promise<RunResult> {
   saveRecord(record);
   log("conversion.done", { withdrawnEth: formatEther(BigInt(conv.withdrawnWei)), leftoverWei: conv.remainingWei, record: recordFile });
   return "done";
+}
+
+/**
+ * Dry run only: quote a curve venue for an asset the vault has not registered yet, so the owner can see the
+ * venue works before running RegisterRbl. PROBE_WEI is simulated, never drawn or sent; the asset gets no slice.
+ */
+async function probeVenues(probes: Array<{ symbol: string; address: Address; curve: Address; feeBps: bigint; reason: string }>, eth: bigint) {
+  for (const p of probes) {
+    try {
+      const [out, [quoteReserve, tokenReserve], decimals, sellable] = await Promise.all([
+        curveQuote(p.curve, probeWei, simAccount),
+        pub.readContract({ address: p.curve, abi: ponsCurveAbi, functionName: "getReserves" }),
+        pub.readContract({ address: p.address, abi: erc20Abi, functionName: "decimals" }),
+        pub.readContract({ address: p.curve, abi: ponsCurveAbi, functionName: "sellableTokens" }),
+      ]);
+      const marginalEth = tokenReserve > 0n ? (quoteReserve * 10n ** 18n) / tokenReserve : 0n;
+      log("plan.asset", {
+        symbol: p.symbol,
+        venue: "pons-curve",
+        registered: false,
+        amountInEth: "0",
+        probeEth: formatEther(probeWei),
+        curve: p.curve,
+        curveFeeBps: Number(p.feeBps),
+        quoted: formatUnits(out, decimals),
+        minOut: formatUnits(minOut(out, slippageBps), decimals),
+        marginalPriceEth: formatUnits(marginalEth, 18),
+        marginalPriceUsd: formatUnits((marginalEth * eth) / 10n ** 18n, 18),
+        reservesEth: formatEther(quoteReserve),
+        reservesTokens: formatUnits(tokenReserve, decimals),
+        sellableTokens: formatUnits(sellable, decimals),
+        simulatedFrom: simAccount,
+        note: `${p.reason}: quoted for the venue check only, nothing would be bought`,
+      });
+    } catch (e) {
+      log("plan.asset", { symbol: p.symbol, venue: "pons-curve", registered: false, amountInEth: "0", probeEth: formatEther(probeWei), curve: p.curve, error: describeError(e), note: p.reason });
+    }
+  }
 }
 
 const describeError = (e: unknown) => {

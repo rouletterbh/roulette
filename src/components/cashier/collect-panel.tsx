@@ -14,7 +14,7 @@ import { claimAs, convertToRewards, deadlineIn, quoteClaim, readClaimReceipt, wi
 import { CLAIM_DEADLINE_MINUTES, CLAIM_SLIPPAGE_BPS, convertCreditUsd1e18, tokensForUsd } from "@/lib/web3/claim-math";
 import { PAUSE_FLAGS, selectChips, type ChipBalances } from "@/lib/web3/contracts";
 import type { TxSpec } from "@/lib/web3/use-tx-flow";
-import { RESTOCK_NOTE, ageLabel, claimAmount, collectRow, tokenLabel, usdFloor } from "./collect-view";
+import { PROJECT_TOKEN_NOTE, RESTOCK_NOTE, ageLabel, claimAmount, collectRow, defaultAssetId, tokenLabel, usdFloor } from "./collect-view";
 
 /**
  * The cashier's Claim tab with the chain as the only source: a two-step collect flow.
@@ -85,7 +85,9 @@ export function CollectPanel({ address, chips, escrowUnits, win, chipUsdValue, b
   const [amountInput, setAmountInput] = useState("");
   const [lastClaim, setLastClaim] = useState<{ symbol: string; tokens: string | null; usd: number; hash: Hex } | null>(null);
   const rows = collect.assets.map((a) => ({ asset: a, row: collectRow(a, win.usd1e18) }));
-  const picked = rows.find((r) => r.asset.id === assetId && r.row.claimable) ?? null;
+  // Registry order (the project token first); RBL is preselected while it is claimable, otherwise the player picks.
+  const effectiveId = assetId ?? defaultAssetId(rows.map((r) => ({ id: r.asset.id, claimable: r.row.claimable })));
+  const picked = rows.find((r) => r.asset.id === effectiveId && r.row.claimable) ?? null;
   const amount = picked ? claimAmount(amountInput, picked.row.limit.maxUsd1e18, picked.asset.minimumPayoutUsd1e18) : null;
   const estimate = picked && amount && picked.asset.priceUsd1e18 ? tokensForUsd(amount.usd1e18, picked.asset.priceUsd1e18, picked.asset.decimals) : null;
   const canClaim = !blocked && !paused && !!picked && !!amount && amount.error === null && amount.usd1e18 > 0n;
@@ -219,6 +221,7 @@ export function CollectPanel({ address, chips, escrowUnits, win, chipUsdValue, b
         <p className="mt-3 text-[12.5px] text-muted">
           Claims are paid from the vault&apos;s own on-chain inventory, so the amount shown per asset is the most it can pay right now. A win balance above that stays yours and waits for the next restock.
         </p>
+        <p className="mt-2 text-[12.5px] text-muted">{PROJECT_TOKEN_NOTE}</p>
 
         {picked && amount && (
           <div className="mt-6">

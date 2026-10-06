@@ -171,8 +171,10 @@ describe("rewards", () => {
   it("shows no USD when the oracle has no fresh price and unavailable when the vault is empty", () => {
     const rows = buildRewardRows(new Map([[cashcat.contractAddress!.toLowerCase(), vault({ status: 0, inventory: 0n, priceUsd1e18: undefined })]]), [cashcat]);
     expect(rows[0]).toMatchObject({ status: "unavailable", statusLabel: "Temporarily unavailable", inventoryTokens: 0, priceUsd: null, inventoryUsd: null });
+    // Registered: false (the vault has no config for the address, e.g. RBL before RegisterRbl runs) is "Not yet
+    // listed", not "Temporarily unavailable": nothing is temporarily missing, the asset simply is not on the vault.
     const unregistered = buildRewardRows(new Map([[cashcat.contractAddress!.toLowerCase(), vault({ registered: false, status: undefined })]]), [cashcat]);
-    expect(unregistered[0].status).toBe("unavailable");
+    expect(unregistered[0]).toMatchObject({ status: "unverified", statusLabel: "Not yet listed", inventoryTokens: null, priceUsd: null, inventoryUsd: null });
     expect(unregistered[0].minimumPayoutUsd).toBe(cashcat.minimumPayout);
   });
 });

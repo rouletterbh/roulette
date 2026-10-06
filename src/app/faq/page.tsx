@@ -64,8 +64,10 @@ const categories: Array<{ id: string; label: string; items: AccordionItem[] }> =
             </p>
             <TokenAddress className="mt-3" />
             <p className="mt-3">
-              You do not need {siteConfig.token.symbol} to play, it is not one of the reward assets in the vault, and nothing on this site is advice to buy it.
-              Announcements come from <a href={siteConfig.socials.x.href} target="_blank" rel="noreferrer">X {siteConfig.socials.x.handle}</a> only.
+              You do not need {siteConfig.token.symbol} to play. It is one of the reward assets: winnings can be collected as {siteConfig.token.symbol} at the
+              oracle price, from vault inventory that is bought on its launch curve with the ETH players convert. The <A href="/cashier?tab=claim">cashier</A> shows
+              whether it is claimable right now; when the vault holds none, it is not offered. Nothing on this site is advice to buy it. Announcements come from{" "}
+              <a href={siteConfig.socials.x.href} target="_blank" rel="noreferrer">X {siteConfig.socials.x.handle}</a> only.
             </p>
           </>
         ),

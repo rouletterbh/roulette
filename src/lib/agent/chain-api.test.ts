@@ -6,6 +6,9 @@ import { ROUND_STATUS } from "@/lib/web3/contracts";
 import { casinoTreasuryAbi, chip1155Abi, rewardVaultAbi, rouletteGameAbi } from "@/lib/web3/abi";
 import { MASK_RED, encodeBetById } from "./encode-bets";
 import { ADDR, CASHCAT, NOW, PLAYER, PONS, account, asset, fakeChain, fakeReader, fundedAsset, game, openRound, round109, treasury } from "./__fixtures__/chain";
+import { siteConfig } from "@/config/site";
+
+const RBL = siteConfig.token.address as `0x${string}`;
 import {
   ChainClaimBodySchema,
   ChainConvertToRewardsBodySchema,
@@ -183,6 +186,13 @@ describe("reads", () => {
     expect(low.operator.wallet).toMatchObject({ balanceEth: "0.0004", lowGas: true, source: "oracle-post" });
     expect(low.warnings[0]).toMatch(/below 0\.001 ETH/);
     expect(low.status).toBe("ok");
+    // The project token is reported as a reward asset only once the vault has it registered.
+    expect(h.data.token).toMatchObject({ symbol: "RBL", rewardAsset: false, note: "project token; not required to play and not a reward asset" });
+    const withRbl = (await json(await chainHealth(fakeReader({ ...state, assets: [...state.assets, fundedAsset(RBL, 500_000n, { oraclePriceUsd1e18: 22_482_021_312_746n })] })))).body.data;
+    expect(withRbl.token).toMatchObject({ symbol: "RBL", rewardAsset: true });
+    expect(withRbl.token.note).toMatch(/a reward asset on the vault.*oracle price.*launch curve.*Not required to play/);
+    const unregistered = (await json(await chainHealth(fakeReader({ ...state, assets: [...state.assets, asset(RBL, { oracle: null, vault: { registered: false, enabled: false } })] })))).body.data;
+    expect(unregistered.token.rewardAsset).toBe(false);
     const idle = (await json(await chainHealth(fakeReader()))).body.data;
     expect(idle.operator.lastRoundOpened).toBeNull();
     expect(idle.operator.lastRoundOpenedNote).toMatch(/No RoundOpened log in the last 60000 blocks/);

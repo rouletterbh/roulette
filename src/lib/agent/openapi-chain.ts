@@ -466,6 +466,7 @@ export const chainOpenapiDocument: OpenApiDocument = {
           symbol: { type: ["string", "null"] },
           name: { type: ["string", "null"] },
           category: { type: ["string", "null"], enum: ["stock-token", "crypto", "special", null] },
+          note: { type: ["string", "null"], description: "One factual line from the app registry (e.g. the project token); never a price or value claim." },
           contractAddress: { ...address, type: ["string", "null"] },
           decimals: { type: "integer" },
           registered: { type: "boolean", description: "Registered on the RewardVault." },

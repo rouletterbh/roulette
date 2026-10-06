@@ -5,6 +5,7 @@ import { PAYOUT } from "@/lib/roulette/bets";
 import { commit, deriveResult } from "@/lib/fairness/commit-reveal";
 import { MASK_RED, betIdFromContract, encodeBetById } from "./encode-bets";
 import { ADDR, CASHCAT, NOW, PLAYER, PONS, account, asset, game, head, openRound, round109, round109Bets, table1, treasury } from "./__fixtures__/chain";
+import { rewardRegistry } from "@/config/tokens";
 import { accountView, betView, idJson, limitsView, pauseView, pricesView, rewardsView, roundView, scanWindowView, statsView, tableClosedReason, tableView, treasuryView, verifyBody } from "./chain-views";
 
 describe("idJson / pauseView / scanWindowView", () => {
@@ -214,6 +215,15 @@ describe("rewardsView / pricesView", () => {
     expect(pons).toMatchObject({ priceUsd: null, postedPriceUsd: 0.398201, priceAgeSeconds: 2000, priceStale: true });
     // Registry entries the vault does not hold are listed as not listed, never with invented inventory.
     expect(r.assets.find((a) => a.symbol === "NVDA")).toMatchObject({ registered: false, status: "unverified", vaultStatus: null, inventory: null, priceUsd: null });
+    // The project token: first in the registry and carrying its note. The server reads every registry address from the
+    // vault, so before RegisterRbl runs it arrives as registered: false and is "Not yet listed" (never "available").
+    const rbl = rewardRegistry.find((t) => t.symbol === "RBL")!.contractAddress as `0x${string}`;
+    const withRbl = rewardsView([...assets, asset(rbl, { oracle: null, oraclePriceUsd1e18: null, oracleUpdatedAt: null, vault: { registered: false, enabled: false, priceUsd1e18: undefined } })], NOW);
+    expect(withRbl.assets[0]).toMatchObject({ id: "crypto-rbl", symbol: "RBL", name: "Roblette", registered: false, enabled: false, status: "unverified", statusLabel: "Not yet listed", inventory: "0", priceUsd: null, postedPriceUsd: null });
+    expect(withRbl.assets[0].note).toMatch(/^Project token; claimable as a reward at the oracle price/);
+    expect(cashcat.note).toBeNull();
+    // A vault read that failed outright (asset absent from the reader's list) stays "Temporarily unavailable", as before.
+    expect(r.assets[0]).toMatchObject({ id: "crypto-rbl", registered: false, status: "unavailable" });
   });
 
   it("values funded inventory at the fresh price and shows assets the registry does not name", () => {

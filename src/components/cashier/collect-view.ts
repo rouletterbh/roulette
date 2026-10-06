@@ -9,6 +9,21 @@ import { claimLimit, type ClaimBlocker, type ClaimLimit } from "@/lib/web3/claim
 
 export const RESTOCK_NOTE = "Vault inventory is being restocked: conversions are fulfilled in batches.";
 
+/** Registry id of the project token (src/config/tokens.ts). */
+export const PROJECT_TOKEN_ID = "crypto-rbl";
+
+/** One sentence under "Claim as": how RBL gets into the vault. Factual, no price or value talk. */
+export const PROJECT_TOKEN_NOTE = "Winnings can be collected as RBL, the project token, at the oracle price, from vault inventory that is bought on its launch curve with the ETH players convert.";
+
+/**
+ * The asset to preselect when nothing has been picked: the project token, but only while the vault can
+ * actually pay a claim in it. Otherwise nothing is preselected (the player chooses).
+ */
+export function defaultAssetId(rows: ReadonlyArray<{ id: string; claimable: boolean }>): string | null {
+  const rbl = rows.find((r) => r.id === PROJECT_TOKEN_ID);
+  return rbl?.claimable ? rbl.id : null;
+}
+
 export interface CollectAssetInput {
   symbol: string;
   enabled: boolean;

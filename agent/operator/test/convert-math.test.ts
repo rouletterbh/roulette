@@ -197,3 +197,80 @@ describe("coverage and the peg", () => {
     expect(() => breakEvenEthUsd1e18(0n, CHIP_USD)).toThrow();
   });
 });
+
+// ------------------------------------------------------------ weighted targets (RBL)
+
+import { targetsUsd } from "../src/convert-math";
+
+describe("weighted targets: target per asset = totalWinBalance × WEIGHT share", () => {
+  const four = (inv: [bigint, bigint, bigint, bigint] = [0n, 0n, 0n, 0n]) => [
+    { symbol: "RBL", priceUsd1e18: 22_482_021_312_746n, inventory: inv[0], decimals: 18 }, // $0.0000225 (curve, 2026-10-07)
+    ...three([inv[1], inv[2], inv[3]]),
+  ];
+  const WEIGHTS = [{ symbol: "RBL", weight: 40 }, { symbol: "CASHCAT", weight: 20 }, { symbol: "PONS", weight: 20 }, { symbol: "AI", weight: 20 }];
+
+  test("default WEIGHTS RBL=40, CASHCAT=20, PONS=20, AI=20 come from a per-symbol fallback map", () => {
+    const w = parseWeights(undefined, ["RBL", "CASHCAT", "PONS", "AI"], { RBL: 40, CASHCAT: 20, PONS: 20, AI: 20 });
+    expect(w).toEqual(WEIGHTS);
+    // A symbol missing from the map gets 0; a numeric fallback still means equal weights (old behaviour).
+    expect(parseWeights(undefined, ["RBL", "X"], { RBL: 40 }).map((x) => x.weight)).toEqual([40, 0]);
+    expect(parseWeights(undefined, ["RBL", "X"], 1).map((x) => x.weight)).toEqual([1, 1]);
+    // An explicit spec overrides the map entirely.
+    expect(parseWeights("CASHCAT=100", ["RBL", "CASHCAT"], { RBL: 40, CASHCAT: 20 }).map((x) => x.weight)).toEqual([0, 100]);
+  });
+
+  test("without weights the target is still totalWinBalance ÷ assets (the old rule, kept for callers that pass none)", () => {
+    const t = targetsUsd(6n * E18, three());
+    expect([...t.values()]).toEqual([2n * E18, 2n * E18, 2n * E18]);
+    expect(shortfallsUsd(6n * E18, three([5n * E18, 10n * E18, 0n]))).toEqual(shortfallsUsd(6n * E18, three([5n * E18, 10n * E18, 0n]), undefined));
+  });
+
+  test("worked example: $5.00 owed, empty vault → RBL $2.00, CASHCAT/PONS/AI $1.00 each", () => {
+    const t = targetsUsd(5n * E18, four(), WEIGHTS);
+    expect(t.get("RBL")).toBe(2n * E18);
+    expect(t.get("CASHCAT")).toBe(E18);
+    expect(t.get("PONS")).toBe(E18);
+    expect(t.get("AI")).toBe(E18);
+    const s = shortfallsUsd(5n * E18, four(), WEIGHTS);
+    expect([...s.values()].reduce((a, b) => a + b, 0n)).toBe(5n * E18);
+    // In ETH at $2,670: RBL 0.000749 ETH, the others 0.000375 ETH each (grossed up by 1% slippage).
+    const wei = shortfallsWei(s, ETH, 100);
+    expect(Number(wei.get("RBL")) / 1e18).toBeCloseTo(2 / 2670 / 0.99, 9);
+    expect(Number(wei.get("AI")) / 1e18).toBeCloseTo(1 / 2670 / 0.99, 9);
+  });
+
+  test("shares are taken over the assets actually being bought: RBL unregistered → the other three split equally", () => {
+    // RBL is not in `assets` (skipped as unregistered), so its 40 is ignored and 20/20/20 = thirds.
+    const t = targetsUsd(6n * E18, three(), WEIGHTS);
+    expect([...t.values()]).toEqual([2n * E18, 2n * E18, 2n * E18]);
+  });
+
+  test("vault holdings reduce the shortfall per asset and never offset another asset; zero weight → zero target", () => {
+    // RBL: $2 target, vault holds 50,000 RBL ≈ $1.12 → shortfall $0.88. PONS long → 0, not credited to AI.
+    const s = shortfallsUsd(5n * E18, four([50_000n * E18, 0n, 10n * E18, 0n]), WEIGHTS);
+    expect(s.get("RBL")).toBe(2n * E18 - tokenValueUsd(50_000n * E18, 22_482_021_312_746n, 18));
+    expect(s.get("PONS")).toBe(0n);
+    expect(s.get("AI")).toBe(E18);
+    const zero = targetsUsd(5n * E18, four(), [{ symbol: "RBL", weight: 0 }, { symbol: "CASHCAT", weight: 1 }, { symbol: "PONS", weight: 1 }, { symbol: "AI", weight: 1 }]);
+    expect(zero.get("RBL")).toBe(0n);
+    expect(zero.get("AI")).toBe((5n * E18) / 3n);
+    // All-zero weights: nothing is targeted rather than a division by zero.
+    expect([...targetsUsd(5n * E18, three(), [{ symbol: "CASHCAT", weight: 0 }]).values()]).toEqual([0n, 0n, 0n]);
+  });
+
+  test("full pipeline with the default weights: 50 chips converted, empty vault, ETH $2,670", () => {
+    const assets = four();
+    const shortUsd = shortfallsUsd(5n * E18, assets, WEIGHTS);
+    const need = shortfallsWei(shortUsd, ETH);
+    const totalNeed = [...need.values()].reduce((s, v) => s + v, 0n);
+    expect(Number(totalNeed) / 1e18).toBeCloseTo(5 / 2670, 9);
+    const draws = planDraws({ source: "both", claimableWei: 50n * CHIP_PRICE, inventoryWei: 857_142_857_142_856n, minClaimableWei: eth("0.0005"), minInventoryWei: eth("0.004"), shortfallWei: totalNeed });
+    const a = allocateBudget(draws.claimableWei + draws.inventoryWei, need, WEIGHTS);
+    for (const s of ["RBL", "CASHCAT", "PONS", "AI"]) expect(a.get(s)).toEqual({ totalWei: need.get(s)!, shortfallWei: need.get(s)!, weightedWei: 0n });
+    expect(Number(a.get("RBL")!.totalWei) / Number(a.get("CASHCAT")!.totalWei)).toBeCloseTo(2, 6); // 40 : 20
+    // Budget beyond the shortfall is split by the same weights: 40% of the remainder goes to RBL.
+    const extra = allocateBudget(totalNeed + 10_000n, need, WEIGHTS);
+    expect(extra.get("RBL")!.weightedWei).toBe(4_000n);
+    expect(extra.get("AI")!.weightedWei).toBe(2_000n);
+  });
+});

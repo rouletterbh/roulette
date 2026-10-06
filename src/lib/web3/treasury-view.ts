@@ -355,7 +355,12 @@ export function buildRewardRows(byAddress: ReadonlyMap<string, VaultAssetRaw>, r
       // Listed in the registry but the vault could not be read (address unset or call failed).
       return { token, status: "unavailable", statusLabel: REWARD_STATUS_LABEL.unavailable, inventoryTokens: null, priceUsd: null, inventoryUsd: null, minimumPayoutUsd: token.minimumPayout };
     }
-    const status: LiquidityStatus = raw.registered && raw.status != null ? ASSET_STATUS[raw.status] ?? "unavailable" : "unavailable";
+    if (!raw.registered) {
+      // On chain but not registered on the vault (e.g. RBL before RegisterRbl runs): nothing can be claimed and
+      // no inventory or price exists for it, so it is "Not yet listed", not "temporarily" anything.
+      return { token, status: "unverified", statusLabel: REWARD_STATUS_LABEL.unverified, inventoryTokens: null, priceUsd: null, inventoryUsd: null, minimumPayoutUsd: token.minimumPayout };
+    }
+    const status: LiquidityStatus = raw.status != null ? ASSET_STATUS[raw.status] ?? "unavailable" : "unavailable";
     const inventoryTokens = Number(raw.inventory) / 10 ** raw.decimals;
     const priceUsd = raw.priceUsd1e18 != null && raw.priceUsd1e18 > 0n ? Number(raw.priceUsd1e18) / 1e18 : null;
     return {
@@ -365,7 +370,7 @@ export function buildRewardRows(byAddress: ReadonlyMap<string, VaultAssetRaw>, r
       inventoryTokens,
       priceUsd,
       inventoryUsd: priceUsd != null ? Math.round(inventoryTokens * priceUsd * 100) / 100 : null,
-      minimumPayoutUsd: raw.registered ? Number(raw.minimumPayoutUsd) / 1e18 : token.minimumPayout,
+      minimumPayoutUsd: Number(raw.minimumPayoutUsd) / 1e18,
     };
   });
 }

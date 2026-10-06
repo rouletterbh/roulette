@@ -66,8 +66,9 @@ export default function AboutPage() {
           <h2 className="eyebrow mb-4">The {siteConfig.token.symbol} token</h2>
           <p className="max-w-xl text-[15px] leading-relaxed text-muted">
             {siteConfig.token.name} ({siteConfig.token.symbol}) is the project&rsquo;s token on Robinhood Chain. Its contract address is below so you can verify it
-            yourself; anything claiming to be {siteConfig.token.symbol} at a different address is not ours. You do not need {siteConfig.token.symbol} to play,
-            it is not a reward asset in the vault, and we make no claims about its value.
+            yourself; anything claiming to be {siteConfig.token.symbol} at a different address is not ours. You do not need {siteConfig.token.symbol} to play.
+            It is one of the reward assets: winnings can be collected as {siteConfig.token.symbol} at the oracle price, from vault inventory that is bought
+            on its launch curve with the ETH players convert. We make no claims about its value.
           </p>
           <TokenAddress className="mt-5" />
           <p className="mt-5 text-[13px] text-muted">

@@ -7,17 +7,21 @@ import { RewardCard } from "@/components/rewards/reward-card";
 import { getRewardInventory } from "@/lib/demo/rewards";
 import { getTokenPrices } from "@/lib/prices/coingecko";
 import { rewardRegistry } from "@/config/tokens";
+import { siteConfig } from "@/config/site";
+import { ChainRewardCards, PROJECT_TOKEN_REWARDS_NOTE } from "@/components/rewards/chain-reward-cards";
 
 export const metadata: Metadata = { title: "Rewards" };
 
 export const revalidate = 60;
 
 export default async function RewardsPage() {
-  const quotes = await getTokenPrices(rewardRegistry.filter((t) => t.contractAddress).map((t) => t.contractAddress!));
+  // Demo mode: reference prices and planned holdings (unchanged). Demo off: the vault and its oracle are the only source
+  // (ChainRewardCards reads them in the browser); CoinGecko is never called.
+  const quotes = siteConfig.demoMode ? await getTokenPrices(rewardRegistry.filter((t) => t.contractAddress).map((t) => t.contractAddress!)) : {};
   const inv = getRewardInventory(Object.fromEntries(Object.entries(quotes).map(([k, q]) => [k, q?.usd ?? null])));
   const groups = [
-    { title: "Ecosystem tokens", sub: "Assets on Robinhood Chain held by the reward vault.", items: inv.filter((i) => i.token.category === "crypto") },
-    { title: "Stock Tokens", sub: "Offered only where the vault holds inventory and your jurisdiction is enabled.", items: inv.filter((i) => i.token.category === "stock-token") },
+    { title: "Ecosystem tokens", sub: "Assets on Robinhood Chain held by the reward vault.", category: "crypto" as const, items: inv.filter((i) => i.token.category === "crypto") },
+    { title: "Stock Tokens", sub: "Offered only where the vault holds inventory and your jurisdiction is enabled.", category: "stock-token" as const, items: inv.filter((i) => i.token.category === "stock-token") },
   ];
   return (
     <div className="container-edge py-16 md:py-24">
@@ -26,6 +30,7 @@ export default async function RewardsPage() {
           <Eyebrow className="mb-4 block">Rewards</Eyebrow>
           <h1 className="font-display text-display-lg text-balance">One wheel. An entire market of rewards.</h1>
           <p className="mt-5 max-w-lg text-base text-muted md:text-lg">You win a balance, not a token. Then you choose how it settles, from whatever the vault actually holds. We never display a reward we can&apos;t deliver.</p>
+          <p className="mt-3 max-w-lg text-[14px] text-muted">{PROJECT_TOKEN_REWARDS_NOTE}</p>
           <div className="mt-8 flex items-center gap-3">
             <Button href="/cashier?tab=claim" variant="accent">Claim a win</Button>
             <Button href="/treasury" variant="ghost">Vault inventory</Button>
@@ -43,7 +48,11 @@ export default async function RewardsPage() {
             <h2 className="font-display text-3xl">{gp.title}</h2>
             <p className="text-[13px] text-muted">{gp.sub}</p>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{gp.items.map((i) => <RewardCard key={i.token.id} item={i} />)}</div>
+          {siteConfig.demoMode ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{gp.items.map((i) => <RewardCard key={i.token.id} item={i} />)}</div>
+          ) : (
+            <ChainRewardCards category={gp.category} />
+          )}
         </section>
       ))}
 

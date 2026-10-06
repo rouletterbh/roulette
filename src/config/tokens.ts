@@ -28,6 +28,8 @@ export const RewardTokenSchema = z.object({
   referencePriceAt: z.string().nullable().optional(),
   /** Vault inventory in whole tokens (demo until the vault is funded onchain). */
   inventoryUnits: z.number().nonnegative().optional(),
+  /** One short, factual line shown next to the asset (no price or value claims). */
+  note: z.string().max(160).optional(),
 });
 export type RewardToken = z.infer<typeof RewardTokenSchema>;
 export type RewardCategory = z.infer<typeof RewardCategory>;
@@ -70,6 +72,12 @@ const crypto = (symbol: string, name: string): RewardToken => ({
 // Stock Tokens carry no logo: company marks are third-party trademarks and the
 // explorer lists no Robinhood-issued Stock Token contracts under these symbols yet.
 export const rewardRegistry: RewardToken[] = z.array(RewardTokenSchema).parse([
+  // Roblette (RBL), the project token (siteConfig.token): a reward asset once the owner registers it on
+  // the vault (contracts/script/RegisterRbl.s.sol). Priced by the same PostedPriceOracle, fed by the relay
+  // from RBL's Pons V2 launch curve (no CoinGecko listing, so no reference snapshot). Vault inventory is
+  // bought on that curve with the ETH players convert. Availability is never hardcoded: every surface reads
+  // the vault, and until registration RBL reads "Not yet listed". Logo: our own monogram (public/brand/tokens/RBL.svg).
+  { ...crypto("RBL", "Roblette"), logoURI: "/brand/tokens/RBL.svg", contractAddress: "0x041f48E1C2855be1287B94363f4f3D8585ceCCdc", priceOracle: "0x284C9eCF075D0fD48Fa83C7B8816644392a54E68", enabled: true, liquidityStatus: "unavailable", note: "Project token; claimable as a reward at the oracle price, from vault inventory bought on its launch curve" },
   stock("NVDA", "NVIDIA"),
   stock("AAPL", "Apple"),
   stock("TSLA", "Tesla"),

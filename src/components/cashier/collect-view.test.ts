@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { RESTOCK_NOTE, ageLabel, claimAmount, collectRow, tokenLabel, usdFloor } from "./collect-view";
+import { PROJECT_TOKEN_ID, PROJECT_TOKEN_NOTE, RESTOCK_NOTE, ageLabel, claimAmount, collectRow, defaultAssetId, tokenLabel, usdFloor } from "./collect-view";
 
 const E18 = 10n ** 18n;
 const MIN = E18 / 2n;
@@ -65,5 +65,21 @@ describe("labels", () => {
     expect(tokenLabel(9_153_038_808_884_549_670n, 18)).toBe("9.153");
     expect(tokenLabel(250n * E18, 18)).toBe("250");
     expect(tokenLabel(1_999_999n, 6)).toBe("1.9999");
+  });
+});
+
+describe("project token (RBL) preselection", () => {
+  it("preselects RBL only while the vault can pay a claim in it; otherwise nothing is preselected", () => {
+    expect(PROJECT_TOKEN_ID).toBe("crypto-rbl");
+    expect(defaultAssetId([{ id: "crypto-rbl", claimable: true }, { id: "crypto-cashcat", claimable: true }])).toBe("crypto-rbl");
+    // RBL unregistered / empty / stale → not claimable → no preselection, even when another asset is claimable.
+    expect(defaultAssetId([{ id: "crypto-rbl", claimable: false }, { id: "crypto-cashcat", claimable: true }])).toBeNull();
+    expect(defaultAssetId([{ id: "crypto-cashcat", claimable: true }])).toBeNull();
+    expect(defaultAssetId([])).toBeNull();
+  });
+  it("the collect note states the mechanism, not a price or a value", () => {
+    expect(PROJECT_TOKEN_NOTE).toMatch(/collected as RBL, the project token, at the oracle price/);
+    expect(PROJECT_TOKEN_NOTE).toMatch(/bought on its launch curve with the ETH players convert/);
+    expect(PROJECT_TOKEN_NOTE).not.toMatch(/\$|value|worth|appreciat/i);
   });
 });

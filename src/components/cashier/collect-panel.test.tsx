@@ -192,3 +192,32 @@ describe("CollectPanel", () => {
     expect(screen.getByLabelText("Reading the reward vault").getAttribute("aria-busy")).toEqual("true");
   });
 });
+
+describe("project token (RBL) in the Claim step", () => {
+  const funded = (symbol: string) => asset(symbol, { status: "available", inventory: 250n * E18 });
+
+  it("lists RBL first (registry order) and preselects it while it is claimable", () => {
+    state.collect = collect([funded("RBL"), funded("CASHCAT"), asset("PONS")]);
+    setup({ win: { usd1e18: 5n * E18, isFetched: true, refetch: vi.fn() } });
+    const options = screen.getAllByRole("radio");
+    expect(text(options[0])).toMatch(/^RBL/);
+    expect(options[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(options[1]!.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("button", { name: "Claim $5.00 as RBL" })).toBeTruthy();
+    expect(screen.getByText(/collected as RBL, the project token, at the oracle price/)).toBeTruthy();
+    // The player can still pick another asset.
+    fireEvent.click(options[1]!);
+    expect(options[1]!.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("button", { name: "Claim $5.00 as CASHCAT" })).toBeTruthy();
+  });
+
+  it("preselects nothing when RBL is not claimable (unregistered or empty), even if another asset is", () => {
+    state.collect = collect([asset("RBL", { registered: false, enabled: false, priceUsd1e18: null, postedPriceUsd1e18: null, priceUpdatedAt: null }), funded("CASHCAT")]);
+    setup({ win: { usd1e18: 5n * E18, isFetched: true, refetch: vi.fn() } });
+    const options = screen.getAllByRole("radio");
+    expect(disabled(options[0])).toBe(true);
+    expect(text(options[0])).toContain("Not enabled for claims on the vault.");
+    expect(options.every((o) => o.getAttribute("aria-checked") === "false")).toBe(true);
+    expect(disabled(screen.getByRole("button", { name: "Claim" }))).toBe(true);
+  });
+});

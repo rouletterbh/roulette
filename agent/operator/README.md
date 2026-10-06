@@ -9,14 +9,19 @@ cd agent/operator && bun install
 ```
 
 ## Price relay (`src/post-prices.ts`)
-Keeps `PostedPriceOracle` fresh for CASHCAT, PONS and AI from CoinGecko (platform `robinhood`).
+Keeps `PostedPriceOracle` fresh for every reward asset. Each asset has a price SOURCE (pure maths in `src/price-sources.ts`, tested):
+
+| Source | Assets | Price |
+|---|---|---|
+| `coingecko` | CASHCAT, PONS, AI | CoinGecko `token_price`, platform `robinhood`, unchanged |
+| `pons-curve` | RBL | marginal price of the token's Pons V2 launch curve: `curve = PonsV2LaunchFactory.getLaunchedToken(asset).curve` (factory `0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e` on 4663, `PONS_FACTORY_ADDRESS` overrides); requires `exists` and `!graduated()`; `(quoteReserve, tokenReserve) = getReserves()`; `ETH per token = quoteReserve ÷ tokenReserve` (bigint at 1e18); `USD = × CoinGecko ETH/USD` (`simple/price?ids=ethereum`); posted as USD 1e18 |
 
 ```bash
-bun run prices:dry                       # fetch and print, no chain writes
+bun run prices:dry                       # fetch and print every asset with its source, no chain writes
 ORACLE_ADDRESS=0x… OPERATOR_PRIVATE_KEY=0x… RPC_URL=https://rpc.mainnet.chain.robinhood.com bun run prices
 ```
 
-Posts every `INTERVAL_SEC` (default 300s; the vault's staleness window is 900s, so two misses are tolerated). Moves above `MAX_DEVIATION_BPS` (default 20%) are skipped and logged; an ADMIN acknowledges with `forcePrice`. Run it under a supervisor (systemd, Railway, Fly) with the key in a secret store.
+`ASSETS` overrides the list: a comma list of `0xaddr` (coingecko) or `0xaddr:pons-curve`. Posts every `INTERVAL_SEC` (default 300s; the vault's staleness window is 900s, so two misses are tolerated). Moves above `MAX_DEVIATION_BPS` (default 20%) are skipped and logged; an ADMIN acknowledges with `forcePrice`. A curve price is refused (logged, skipped) when it is zero or its implied fully diluted value is outside **[$100, $1e9]** (1e9 RBL × price), which catches a bad reserve read, a wrong curve or a wrong ETH/USD. **Graduation:** once `graduated()` is true the curve's liquidity has moved to a Uniswap v4 pool; the relay has no v4 source, so it logs `GRADUATED … NOT posting` every tick and RBL's posted price goes stale (the vault then reports it UNAVAILABLE and claims revert) until a v4 source is added. It never guesses a price. Run it under a supervisor (systemd, Railway, Fly) with the key in a secret store.
 
 ## Round operator (`src/run-rounds.ts`)
 
@@ -166,24 +171,40 @@ The vault is funded by players, never by the founders. Two treasury ETH buckets 
 `src/convert-inventory.ts` turns them into reward tokens held by the vault:
 
 1. draw the bucket(s) to the treasurer wallet (`SOURCE=both` by default; `claimable` or `inventory` to restrict)
-2. Uniswap v3 `SwapRouter02.exactInputSingle{value}` ETH → asset, per asset, best fee tier by `QuoterV2`
+2. buy each asset with ETH on its VENUE:
+
+   | Venue | Assets | Quote | Buy |
+   |---|---|---|---|
+   | `uniswap-v3` | CASHCAT, PONS, AI | `QuoterV2.quoteExactInputSingle`, best fee tier | `SwapRouter02.exactInputSingle{value}` |
+   | `pons-curve` | RBL | `eth_call` of `buy(amountIn, 0, treasurer)` with `value: amountIn` from the treasurer (dry run without a key: from `TREASURY_SIM_ACCOUNT`, default the ADMIN wallet, simulation only) | `PonsV2BondingCurve.buy{value: amountIn}(amountIn, minOut, treasurer)` |
+
+   The curve is resolved through `PonsV2LaunchFactory.getLaunchedToken(asset).curve` (`PONS_FACTORY_ADDRESS` overrides). `minOut = quote × (1 − SLIPPAGE_BPS)`.
+   The curve's slippage check is a **rate** check, `spent × minTokensOut > received × tokensOut → revert`, so a fill clamped to `sellableTokens()`
+   (with the unspent ETH refunded) still passes when the rate holds; the leftover ETH stays in the treasurer wallet and is reported. **Graduation:**
+   when `graduated()` is true RBL is skipped with an `asset.skipped` log (liquidity is in a Uniswap v4 pool; no venue exists for it here yet) and
+   re-checked right before each send. An asset the vault has not registered is skipped with `asset.skipped … not registered on the vault`; in a
+   dry run a curve asset still gets a `plan.asset` line with `registered: false` quoted from `PROBE_WEI` (default 0.0005 ETH, never drawn or sent)
+   so the venue can be checked before `RegisterRbl.s.sol` runs.
 3. `asset.approve(vault)` + `RewardVault.fundInventory(asset, amount)`
 
 **The key must hold `TREASURER_ROLE`.** The run prints the role it needs and refuses without it. A dry run needs no key.
 The hosted hot key (`OPERATOR_ROLE` only) cannot run this.
 
 **Sizing.** First buy what covers the win balances players already hold: target per asset =
-`RewardVault.totalWinBalance ÷ number of enabled assets`, valued at the posted oracle price, minus what the vault
+`RewardVault.totalWinBalance × share`, where the share is the asset's `WEIGHTS` entry over the sum of the weights of the
+assets actually being bought (default `RBL=40,CASHCAT=20,PONS=20,AI=20`; while RBL is unregistered or graduated the
+other three split 20/20/20, i.e. thirds, exactly as before), valued at the posted oracle price, minus what the vault
 already holds of that asset, floored at 0 (an asset the vault is long on does not offset another's shortfall, because
 a player may claim the whole balance as any one asset). The budget fills those shortfalls first, pro rata to the
-shortfall when it cannot cover them all; whatever is left is split by `WEIGHTS` as before. Shortfalls are grossed up by
+shortfall when it cannot cover them all; whatever is left is split by the same `WEIGHTS`. Shortfalls are grossed up by
 `SLIPPAGE_BPS` so a fill at the minimum output still covers.
 
-Example (ETH $2,670, empty vault, a player converted 50 chips → $5.00 win balance, `claimable` 0.0015 ETH,
-`rewardInventory` 0.000857 ETH): target $1.6667 per asset → shortfall $1.6667 each = 0.000624 ETH each, 0.001873 ETH in
-all (0.001892 ETH with 1% slippage headroom). `fundRewards(0.0015 ETH)` covers 80%; the inventory bucket is below its
-0.004 ETH floor, so only the missing 0.000392 ETH is drawn from it as a top-up. Each asset gets 0.000631 ETH; nothing is
-left for the weighted split.
+Example (ETH $2,670, empty vault, RBL registered, a player converted 50 chips → $5.00 win balance, `claimable` 0.0015 ETH,
+`rewardInventory` 0.000857 ETH): targets RBL $2.00 (40/100), CASHCAT / PONS / AI $1.00 each (20/100) → shortfalls 0.000749 ETH
+for RBL and 0.000375 ETH each for the others, 0.001873 ETH in all (0.001892 ETH with 1% slippage headroom). `fundRewards(0.0015 ETH)`
+covers 80%; the inventory bucket is below its 0.004 ETH floor, so only the missing 0.000392 ETH is drawn from it as a top-up.
+RBL gets twice what each other asset gets; nothing is left for the weighted split. Without RBL on the vault the same $5.00 is
+$1.6667 per asset, as in the previous version of this example.
 
 **Floors.** `claimable` is drawn in full once it reaches `MIN_CLAIMABLE_WEI` (0.0005 ETH): it is owed to players. The
 whole `rewardInventory` bucket is drawn only at `MIN_INVENTORY_WEI` (0.004 ETH ≈ $10; smaller speculative buys are
@@ -217,7 +238,7 @@ volume, but that puts a treasurer key on the host: until that is decided it stay
 | `TREASURY_ADDRESS`, `VAULT_ADDRESS` | — | CasinoTreasury / RewardVault |
 | `OPERATOR_PRIVATE_KEY` | — | a key that holds TREASURER_ROLE (optional for a dry run) |
 | `SOURCE` | `both` | `claimable`, `inventory` or `both` |
-| `WEIGHTS` | equal | split of the budget left after shortfalls, e.g. `CASHCAT=50,PONS=25,AI=25` |
+| `WEIGHTS` | `RBL=40,CASHCAT=20,PONS=20,AI=20` | share of `totalWinBalance` targeted per asset and split of the budget left after shortfalls, e.g. `RBL=50,CASHCAT=50` (assets not named get 0) |
 | `AMOUNT_WEI` | everything drawable | convert at most this much in total (claimable first) |
 | `MIN_CLAIMABLE_WEI` | `0.0005 ETH` | do not draw `claimable` below this |
 | `MIN_INVENTORY_WEI` | `0.004 ETH` | do not draw the whole `rewardInventory` bucket below this (shortfall top-ups excepted) |
@@ -226,10 +247,26 @@ volume, but that puts a treasurer key on the host: until that is decided it stay
 | `MAX_DEVIATION_BPS` | `500` | abort if the pool quote is more than this below the oracle-implied amount |
 | `INTERVAL_SEC` | `300` | pause between runs with `--loop` (minimum 30) |
 | `ROUTER_ADDRESS`, `QUOTER_ADDRESS`, `FACTORY_ADDRESS` | official Uniswap v3 on 4663 | override off mainnet |
+| `PONS_FACTORY_ADDRESS` | `PonsV2LaunchFactory` on 4663 | override off mainnet (RBL's curve is resolved through it) |
+| `TREASURY_SIM_ACCOUNT` | the ADMIN wallet | dry run without a key: `from` for the simulated curve buy (needs ETH); simulation only |
+| `PROBE_WEI` | `0.0005 ETH` | dry run: amount used to quote a curve asset the vault has not registered yet; never drawn or sent |
 
 Uniswap v3 on Robinhood Chain (chain 4663, from the official deployments list, verified by bytecode):
 SwapRouter02 `0xcaf681a66d020601342297493863e78c959e5cb2`, QuoterV2 `0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7`,
 UniswapV3Factory `0x1f7d7550b1b028f7571e69a784071f0205fd2efa`, WETH9 `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`.
+
+RBL (Roblette, `0x041f48E1C2855be1287B94363f4f3D8585ceCCdc`, 18 decimals, 1e9 supply) trades only on its Pons V2 launch curve
+`0x63b0Ef69Cf9F57E883331d1a3bb3AeDa223C7C7b` (native ETH quote, 1% fee, graduation at 4.2 ETH real reserve) until it graduates.
+`state/conversions.json` records `venue` (and `curve`) per swap. RBL must be registered on the vault by the ADMIN first:
+
+```bash
+cd contracts && VAULT=0x83Ea24a4276fe47967F375bc8ca10F870c070A5B ORACLE=0x284C9eCF075D0fD48Fa83C7B8816644392a54E68 PRICE_RBL_1E18=0 \
+  ~/.foundry/bin/forge script script/RegisterRbl.s.sol --rpc-url https://rpc.mainnet.chain.robinhood.com --account roblette \
+  --sender 0xC80D34d68bAB225890958Cd3326d89030713689c --broadcast
+```
+
+(`PRICE_RBL_1E18` > 0 also seeds the oracle with `forcePrice` and sizes the low watermark as $10 worth; 0 leaves pricing to the relay
+and sets the watermark to 500,000 RBL.) Until then every surface reports RBL as not yet listed and the fulfilment skips it.
 
 ## Running on Railway (always-on)
 

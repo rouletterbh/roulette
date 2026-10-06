@@ -391,7 +391,7 @@ export function rewardsView(assets: readonly RewardAssetState[], now: number, re
   const rows = buildRewardRows(new Map(assets.map((a) => [a.address.toLowerCase(), a.vault])), registry);
   const known = new Set(registry.flatMap((t) => (t.contractAddress ? [t.contractAddress.toLowerCase()] : [])));
 
-  const describe = (token: Pick<RewardToken, "id" | "symbol" | "name" | "category" | "decimals"> | null, address: Address | null, status: LiquidityStatus, minimumPayoutUsd: number, priceUsd: number | null, inventoryUsd: number | null) => {
+  const describe = (token: Pick<RewardToken, "id" | "symbol" | "name" | "category" | "decimals" | "note"> | null, address: Address | null, status: LiquidityStatus, minimumPayoutUsd: number, priceUsd: number | null, inventoryUsd: number | null) => {
     const s = address ? byAddress.get(address.toLowerCase()) : undefined;
     const decimals = s?.vault.registered ? s.vault.decimals : (token?.decimals ?? 18);
     const age = s?.oracleUpdatedAt != null ? Math.max(0, now - s.oracleUpdatedAt) : null;
@@ -400,6 +400,8 @@ export function rewardsView(assets: readonly RewardAssetState[], now: number, re
       symbol: token?.symbol ?? null,
       name: token?.name ?? null,
       category: token?.category ?? null,
+      /** One factual line from the app registry (e.g. the project token), never a price or value claim. */
+      note: token?.note ?? null,
       contractAddress: address,
       decimals,
       /** Registered on the RewardVault (has an oracle). False = named in the app registry only. */

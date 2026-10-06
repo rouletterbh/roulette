@@ -60,9 +60,13 @@ export function bpsDiff(quotedOut: bigint, expected: bigint): number {
   return Number(((quotedOut - expected) * 10_000n) / expected);
 }
 
-/** Parse "CASHCAT=50,PONS=25,AI=25" into weights for the given symbols (missing symbols get 0). */
-export function parseWeights(spec: string | undefined, symbols: readonly string[], fallback: number): Weighted[] {
-  if (!spec) return symbols.map((symbol) => ({ symbol, weight: fallback }));
+/**
+ * Parse "CASHCAT=50,PONS=25,AI=25" into weights for the given symbols (missing symbols get 0).
+ * `fallback` applies when the spec is unset: one number for every symbol, or a per-symbol map
+ * (symbols missing from the map get 0).
+ */
+export function parseWeights(spec: string | undefined, symbols: readonly string[], fallback: number | Readonly<Record<string, number>>): Weighted[] {
+  if (!spec) return symbols.map((symbol) => ({ symbol, weight: typeof fallback === "number" ? fallback : (fallback[symbol] ?? 0) }));
   const map = new Map<string, number>();
   for (const part of spec.split(",")) {
     const [k, v] = part.split("=").map((s) => s.trim());
@@ -81,7 +85,8 @@ export function parseWeights(spec: string | undefined, symbols: readonly string[
 // A win balance is USD at the chip peg (chipUsdValue per unit). Its backing is ETH: converting
 // a chip moves chipPriceWei into the treasury's `claimable` earmark, and 20% of the original
 // deposit sits in `rewardInventory`. The fulfilment run draws both buckets, buys the shortfall
-// first, and only then spreads what is left by WEIGHTS.
+// first (target per asset = totalWinBalance × its WEIGHT share), and only then spreads what is
+// left by the same WEIGHTS.
 // ---------------------------------------------------------------------------------------------
 
 const E18 = 10n ** 18n;
@@ -114,16 +119,37 @@ export function weiToUsd(wei: bigint, ethUsd1e18: bigint): bigint {
 }
 
 /**
- * Per-asset shortfall in USD (1e18). Target per asset = totalWinBalance ÷ number of assets
- * (the enabled assets being bought), minus what the vault already holds of it at the oracle
- * price, floored at 0. An asset the vault is long on does not offset another's shortfall:
- * a player can claim their whole balance as any one asset.
+ * Per-asset target in USD (1e18): totalWinBalance × share, where the share is the asset's
+ * WEIGHT over the sum of the weights of the assets being bought (equal shares when no
+ * weights are given). Integer division leaves the remainder unassigned, never over-assigned.
  */
-export function shortfallsUsd(totalWinBalanceUsd1e18: bigint, assets: readonly AssetPosition[]): Map<string, bigint> {
+export function targetsUsd(totalWinBalanceUsd1e18: bigint, assets: readonly AssetPosition[], weights?: readonly Weighted[]): Map<string, bigint> {
   const out = new Map<string, bigint>();
   if (!assets.length) return out;
-  const target = totalWinBalanceUsd1e18 > 0n ? totalWinBalanceUsd1e18 / BigInt(assets.length) : 0n;
+  const total = totalWinBalanceUsd1e18 > 0n ? totalWinBalanceUsd1e18 : 0n;
+  if (!weights) {
+    const each = total / BigInt(assets.length);
+    for (const a of assets) out.set(a.symbol, each);
+    return out;
+  }
+  const w = new Map(weights.map((x) => [x.symbol, BigInt(Math.round(Math.max(0, x.weight)))]));
+  const sum = assets.reduce((s, a) => s + (w.get(a.symbol) ?? 0n), 0n);
+  for (const a of assets) out.set(a.symbol, sum > 0n ? (total * (w.get(a.symbol) ?? 0n)) / sum : 0n);
+  return out;
+}
+
+/**
+ * Per-asset shortfall in USD (1e18): the asset's target (see `targetsUsd`: totalWinBalance ×
+ * its WEIGHT share; equal shares without weights) minus what the vault already holds of it
+ * at the oracle price, floored at 0. An asset the vault is long on does not offset another's
+ * shortfall: a player can claim their whole balance as any one asset.
+ */
+export function shortfallsUsd(totalWinBalanceUsd1e18: bigint, assets: readonly AssetPosition[], weights?: readonly Weighted[]): Map<string, bigint> {
+  const out = new Map<string, bigint>();
+  if (!assets.length) return out;
+  const targets = targetsUsd(totalWinBalanceUsd1e18, assets, weights);
   for (const a of assets) {
+    const target = targets.get(a.symbol) ?? 0n;
     const held = tokenValueUsd(a.inventory, a.priceUsd1e18, a.decimals);
     out.set(a.symbol, target > held ? target - held : 0n);
   }

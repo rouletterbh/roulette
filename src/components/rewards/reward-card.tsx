@@ -18,6 +18,7 @@ export function RewardCard({ item, className }: { item: RewardInventory; classNa
         </div>
         <Badge tone={tone}>{item.statusLabel}</Badge>
       </div>
+      {token.note && <p className="mt-3 text-[12.5px] leading-snug text-muted">{token.note}</p>}
       <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-hairline pt-4 text-[12.5px]">
         <dt className="text-muted">Category</dt><dd className="text-right">{token.category === "stock-token" ? "Stock Token" : token.category === "crypto" ? "Ecosystem" : "Special"}</dd>
         <dt className="text-muted">Network</dt><dd className="text-right">Robinhood Chain</dd>

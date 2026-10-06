@@ -290,6 +290,21 @@ export function chainPrices(reader: ChainReader) {
   });
 }
 
+/** `health.token`: the project token, with a note that follows the vault (a reward asset only once registered there). */
+function projectToken(registeredOnVault: boolean) {
+  return {
+    name: siteConfig.token.name,
+    symbol: siteConfig.token.symbol,
+    address: siteConfig.token.address,
+    chainId: siteConfig.token.chainId,
+    /** True when RewardVault.assetConfig(token).oracle is set: winnings can then be collected as this token. */
+    rewardAsset: registeredOnVault,
+    note: registeredOnVault
+      ? "project token; a reward asset on the vault: winnings can be collected as RBL at the posted oracle price from vault inventory bought on its launch curve. Not required to play"
+      : "project token; not required to play and not a reward asset",
+  };
+}
+
 /** Health never fails on an unreachable chain: it reports it. */
 export async function chainHealth(reader: ChainReader): Promise<Response> {
   const a = reader.addresses;
@@ -315,7 +330,7 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
     signing: "never: write routes return unsigned transaction intents for the agent's own wallet",
     dataSource: "Robinhood Chain (read live through a short server-side cache); nothing is simulated",
     links: { openapi: "/api/v1/openapi.json", datasets: "/api/v1/datasets", docs: "/developers", site: siteConfig.url, x: siteConfig.socials.x.href },
-    token: { name: siteConfig.token.name, symbol: siteConfig.token.symbol, address: siteConfig.token.address, chainId: siteConfig.token.chainId, note: "project token; not required to play and not a reward asset" },
+    token: projectToken(false),
   };
   const chain = { id: activeChain.id, name: activeChain.name, env: siteConfig.chainEnv, explorer: activeChain.blockExplorers.default.url, nativeCurrency: activeChain.nativeCurrency.symbol };
   const settle = async <T,>(p: Promise<T>): Promise<{ value: T } | { error: string }> =>
@@ -324,6 +339,9 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
       (e: unknown) => ({ error: e instanceof BaseError ? e.shortMessage : e instanceof Error ? e.message : String(e) }),
     );
   const [head, treasury, latest, assets, opWallet] = await Promise.all([settle(reader.head()), settle(reader.treasury()), settle(reader.latestRounds()), settle(reader.rewardAssets()), settle(reader.operatorWallet())]);
+  // The project token's note follows the vault: it is a reward asset only once the owner has registered it there.
+  const rbl = "value" in assets ? assets.value.find((x) => x.address.toLowerCase() === siteConfig.token.address.toLowerCase()) : undefined;
+  const token = projectToken(rbl?.vault.registered ?? false);
   if ("error" in head) {
     return ok(
       { status: "degraded", ...base, chain: { ...chain, reachable: false, error: head.error.slice(0, 300) }, time: new Date().toISOString() },
@@ -344,6 +362,7 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
     {
       status: problems.length || !contractsDeployed || (t && !t.raw.isSolvent) ? "degraded" : "ok",
       ...base,
+      token,
       chain: { ...chain, reachable: true, latestBlock: idJson(head.value.blockNumber), l1BlockNumber: head.value.l1BlockNumber == null ? null : idJson(head.value.l1BlockNumber), blockTime: now },
       paused: t ? { treasury: pauseView(t.pause.treasury), game: pauseView(t.pause.game), vault: pauseView(t.pause.vault) } : null,
       treasury: t ? { solvent: t.raw.isSolvent, availableBankroll: Number(t.availableUnits), unit: "chip units" } : null,

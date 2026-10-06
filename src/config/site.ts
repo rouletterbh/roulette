@@ -17,8 +17,9 @@ export const siteConfig = {
   },
   /**
    * The Roblette token (RBL) on Robinhood Chain. Shown as a plain contract address wherever the
-   * project is described. It is not needed to play and is not a reward asset; the site makes no
-   * claims about it beyond its address.
+   * project is described. It is not needed to play. It is listed in the reward registry
+   * (src/config/tokens.ts) and becomes claimable only once the owner registers it on the vault;
+   * the site makes no claims about it beyond its address.
    */
   token: {
     name: "Roblette",
