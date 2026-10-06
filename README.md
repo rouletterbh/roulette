@@ -74,6 +74,12 @@ State is split per domain (wallet, chips, game round, table, treasury, preferenc
 
 `/` `/play` `/play/practice` `/play/quick` `/tables` `/table/[id]` `/create` `/explore` `/rewards` `/leaderboard` `/treasury` `/fairness` `/player/[wallet]` `/me` `/me/history` `/me/rewards` `/me/chips` `/cashier` `/referrals` `/tournaments` `/about` `/how-it-works` `/technology` `/security` `/faq` `/responsible-play` `/legal` `/terms` `/privacy` `/cookies` `/risk-disclosure` `/stock-token-disclosure` `/restricted-jurisdictions` `/aml` — plus unlisted `/admin`.
 
+## Links
+
+- Site: https://www.roblette.fun
+- X: https://x.com/robletterbh
+- Roblette token (RBL) on Robinhood Chain: `0x041f48E1C2855be1287B94363f4f3D8585ceCCdc` (not required to play; not a reward asset; the only official contract)
+
 ## Docs
 
 - `docs/DESIGN-SYSTEM.md` — tokens, components, conventions

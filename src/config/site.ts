@@ -9,6 +9,24 @@ export const siteConfig = {
     "A social roulette club on Robinhood Chain. Chips live onchain as ERC-1155 assets and rewards can settle in crypto and supported Stock Tokens.",
   demoMode: process.env.NEXT_PUBLIC_DEMO_MODE === "true",
   chainEnv: (process.env.NEXT_PUBLIC_CHAIN_ENV ?? "testnet") as "testnet" | "mainnet",
+  /** Public site address, used for link previews and canonical URLs. */
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.roblette.fun",
+  /** Official social accounts. */
+  socials: {
+    x: { label: "X", handle: "@robletterbh", href: "https://x.com/robletterbh" },
+  },
+  /**
+   * The Roblette token (RBL) on Robinhood Chain. Shown as a plain contract address wherever the
+   * project is described. It is not needed to play and is not a reward asset; the site makes no
+   * claims about it beyond its address.
+   */
+  token: {
+    name: "Roblette",
+    symbol: "RBL",
+    address: "0x041f48E1C2855be1287B94363f4f3D8585ceCCdc",
+    chainId: 4663,
+    decimals: 18,
+  },
   nav: [
     { label: "Play", href: "/play" },
     { label: "Tables", href: "/tables" },
@@ -49,6 +67,7 @@ export const siteConfig = {
         { label: "About", href: "/about" },
         { label: "How it works", href: "/how-it-works" },
         { label: "FAQ", href: "/faq" },
+        { label: "X (Twitter)", href: "https://x.com/robletterbh", external: true },
       ],
     },
     {

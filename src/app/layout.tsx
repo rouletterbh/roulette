@@ -15,11 +15,26 @@ const serif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteConfig.url),
   title: {
     default: `${siteConfig.name} — Roulette on Robinhood Chain`,
     template: `%s — ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  openGraph: {
+    type: "website",
+    siteName: siteConfig.name,
+    url: siteConfig.url,
+    title: `${siteConfig.name} — Roulette on Robinhood Chain`,
+    description: siteConfig.description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: siteConfig.socials.x.handle,
+    creator: siteConfig.socials.x.handle,
+    title: `${siteConfig.name} — Roulette on Robinhood Chain`,
+    description: siteConfig.description,
+  },
 };
 
 export const viewport: Viewport = {

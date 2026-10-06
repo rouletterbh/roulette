@@ -314,7 +314,8 @@ export async function chainHealth(reader: ChainReader): Promise<Response> {
     capabilities: ["read", "verify", "quote", "intents"],
     signing: "never: write routes return unsigned transaction intents for the agent's own wallet",
     dataSource: "Robinhood Chain (read live through a short server-side cache); nothing is simulated",
-    links: { openapi: "/api/v1/openapi.json", datasets: "/api/v1/datasets", docs: "/developers" },
+    links: { openapi: "/api/v1/openapi.json", datasets: "/api/v1/datasets", docs: "/developers", site: siteConfig.url, x: siteConfig.socials.x.href },
+    token: { name: siteConfig.token.name, symbol: siteConfig.token.symbol, address: siteConfig.token.address, chainId: siteConfig.token.chainId, note: "project token; not required to play and not a reward asset" },
   };
   const chain = { id: activeChain.id, name: activeChain.name, env: siteConfig.chainEnv, explorer: activeChain.blockExplorers.default.url, nativeCurrency: activeChain.nativeCurrency.symbol };
   const settle = async <T,>(p: Promise<T>): Promise<{ value: T } | { error: string }> =>

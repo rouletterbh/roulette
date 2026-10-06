@@ -4,6 +4,7 @@ import { Eyebrow } from "@/components/ui/eyebrow";
 import { Accordion, type AccordionItem } from "@/components/ui/accordion";
 import { siteConfig } from "@/config/site";
 import { robinhoodChain } from "@/config/chains";
+import { TokenAddress } from "@/components/layout/token-address";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -50,6 +51,23 @@ const categories: Array<{ id: string; label: string; items: AccordionItem[] }> =
             Robinhood Chain (mainnet chain id {robinhoodChain.id}; testnet {46630}). Gas is paid in ETH. The interface currently targets the{" "}
             {siteConfig.chainEnv} environment. Details are on the <A href="/technology#chain">Technology page</A>.
           </p>
+        ),
+      },
+      {
+        id: "token",
+        question: `Is there a ${siteConfig.token.symbol} token?`,
+        answer: (
+          <>
+            <p>
+              Yes: {siteConfig.token.name} ({siteConfig.token.symbol}) is the project token on Robinhood Chain. The only official contract is the one shown
+              below; verify it on the explorer before interacting with anything that claims to be {siteConfig.token.symbol}.
+            </p>
+            <TokenAddress className="mt-3" />
+            <p className="mt-3">
+              You do not need {siteConfig.token.symbol} to play, it is not one of the reward assets in the vault, and nothing on this site is advice to buy it.
+              Announcements come from <a href={siteConfig.socials.x.href} target="_blank" rel="noreferrer">X {siteConfig.socials.x.handle}</a> only.
+            </p>
+          </>
         ),
       },
     ],

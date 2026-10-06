@@ -97,3 +97,10 @@ Spawns the server, lists tools, calls `get_health`, `list_tables`, `quote_bets` 
 
 - Thin client by design: limits, encodings and proofs live in one place (the web app's `src/lib/agent`, `src/lib/web3/server.ts` and `src/lib/fairness`), so the MCP server cannot drift from the REST API or the contracts.
 - Full API reference: `GET /api/v1/openapi.json`. Dataset catalog: `GET /api/v1/datasets`. Human docs: `/developers`.
+
+## Links
+
+- Site: https://www.roblette.fun
+- X: https://x.com/robletterbh
+- Roblette token (RBL) on Robinhood Chain: `0x041f48E1C2855be1287B94363f4f3D8585ceCCdc` (not required to play; not a reward asset; the only official contract)
+
