@@ -14,6 +14,7 @@ import { useTxFlow } from "@/lib/web3/use-tx-flow";
 import { buildChainCommitment, buildChainReveal, chainStatusLabel, planChainSync, sameTreasury } from "@/lib/web3/round-sync";
 import { BETTING_WINDOW_SECONDS, PAUSE_FLAGS, ROUND_STATUS, contractAddresses, gameContractsReady, resolveChainTableId, selectChips, type ChipBalances } from "@/lib/web3/contracts";
 import { TransactionModal } from "@/components/cashier/transaction-modal";
+import { WAKE_PING_MS, pingOperator } from "@/lib/web3/wake";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { explorerAddress } from "@/config/chains";
@@ -242,6 +243,7 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
         run: (report) => enterTableUnits(L.chips.balances, units, report),
         onSuccess: async () => {
           await Promise.all([latest.current.escrow.refetch(), latest.current.chips.refetch(), latest.current.approval.refetch()]);
+          void pingOperator({ force: true });
           setEnterUnits("");
         },
       });
@@ -255,6 +257,21 @@ export function ChainGameDriver({ config }: { config: GameTableConfig }) {
     useChainGame.setState({ active: true, ready: bridgeReady, placeBets: handlePlace, leaveTable: handleLeave });
   }, [bridgeReady, handlePlace, handleLeave]);
   useEffect(() => () => useChainGame.getState().reset(), []);
+
+  // (8) Wake-on-visit: while this table is open in a visible tab, keep the operator awake so it opens
+  //     rounds. A closed or hidden tab stops pinging and the operator stops spending gas within ~90 s.
+  useEffect(() => {
+    const ping = () => {
+      if (document.visibilityState === "visible") void pingOperator();
+    };
+    ping();
+    const id = setInterval(ping, WAKE_PING_MS);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, []);
 
   /* ---------------------------------------------------------------- view */
 

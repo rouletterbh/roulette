@@ -285,3 +285,14 @@ Root Directory, variables and the volume are set in the dashboard (the Dockerfil
 automatically). Railway's GitHub App is installed for `rouletterbh/roulette` only; both services auto-deploy from `main`
 with Watch Paths `agent/operator/**`, so pushes that touch only the website or docs do not restart them. Run exactly ONE round operator at a time: stop the local
 one before the hosted one starts. `bun run convert` stays a local, manual command with the treasurer key (`PROCESS=rewards` exists for a hosted fulfilment loop, but it needs a TREASURER_ROLE key on the host and is not deployed).
+
+## Wake-on-visit (`WAKE_REQUIRED`, default on)
+
+Seated-only was not enough: an idle seat (chips left in escrow) made the operator open 940 empty rounds in ~42 h and
+drained its gas (2026-10-07). The round operator now opens a round only when someone is seated AND a client pinged
+`POST /wake` within `WAKE_TTL_SECONDS` (90). It serves `POST /wake` and `GET /health` on `PORT` (Railway: 8080, public
+domain `rounds-production-9468.up.railway.app`); browser pings are accepted only from `WAKE_ALLOWED_ORIGINS`
+(default: www.roblette.fun, roblette.fun, localhost:3110/3000). The site sets `NEXT_PUBLIC_OPERATOR_WAKE_URL`; the
+table page pings every 30 s while visible (and right after entering), running agents ping from their tick. A closed
+tab stops costing gas within ~90 s. `WAKE_REQUIRED=false` restores the old behaviour (used by the anvil e2e test).
+The endpoint holds no key and can only make the operator do what seated-only already allowed.

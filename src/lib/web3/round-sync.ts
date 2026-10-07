@@ -109,7 +109,7 @@ export function buildChainReveal(roundId: bigint, rm: RandomnessRoundView | null
 
 /** Store phase label for a chain status (used by the driver's status line). */
 export function chainStatusLabel(status: ChainRoundStatus, hasRound: boolean): string {
-  if (!hasRound) return "Waiting for the operator to open a round";
+  if (!hasRound) return "Waiting for the next round: rounds open while someone is seated with the table open";
   switch (status) {
     case ROUND_STATUS.Open:
       return "Bets open on chain";

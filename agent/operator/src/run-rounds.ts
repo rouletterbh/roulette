@@ -20,7 +20,8 @@
  * Env: RPC_URL, CHAIN_ID (4663|46630|31337), GAME_ADDRESS, RANDOMNESS_ADDRESS, OPERATOR_PRIVATE_KEY (optional with --dry-run)
  * Optional: TABLE_IDS ("1"), BETTING_SECONDS (45), ROUND_GAP_SECONDS (3), IDLE_GAP_SECONDS (60), EMPTY_ROUND_POLICY (cancel|settle),
  *           SEATED_ONLY (true: open rounds only while at least one player has chips in escrow; otherwise just watch),
- *           SEAT_POLL_MS (5000), SCAN_FROM_BLOCK (first block to scan EscrowDeposited from; default: latest-50000),
+ *           WAKE_REQUIRED (true: rounds open only while a client pinged POST /wake within WAKE_TTL_SECONDS, default 90;
+ *           needs PORT or WAKE_PORT for the HTTP server; WAKE_ALLOWED_ORIGINS comma list), SEAT_POLL_MS (5000), SCAN_FROM_BLOCK (first block to scan EscrowDeposited from; default: latest-50000),
  *           SCAN_CHUNK_BLOCKS (5000), MAX_ROUNDS (0 = forever; also --rounds=N), ACL_ADDRESS (default: game.ACL()),
  *           STATE_DIR (./state), NEXT_ROUND_ID (first round id when the state dir is empty; used ids are skipped anyway),
  *           POLL_MS (1000), TX_TIMEOUT_MS (120000), MAX_BACKOFF_MS (30000)
@@ -51,6 +52,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import gameAbiJson from "../abi/RouletteGame.json";
+import { WakeState, parseOrigins, wakeHandler } from "./wake";
 import randomnessAbiJson from "../abi/RandomnessManager.json";
 import aclAbiJson from "../abi/AccessController.json";
 
@@ -80,6 +82,11 @@ const gapMs = Number(process.env.ROUND_GAP_SECONDS ?? 3) * 1000;
 const idleGapMs = Number(process.env.IDLE_GAP_SECONDS ?? 60) * 1000;
 // Seated-only: a round costs three transactions, so none is opened while nobody has chips in escrow.
 const seatedOnly = (process.env.SEATED_ONLY ?? "true") !== "false";
+// Wake-on-visit (see src/wake.ts): with WAKE_REQUIRED, a seated player is not enough; a client must
+// have pinged POST /wake within WAKE_TTL_SECONDS. The table page and running agents ping every ~30 s.
+const wakeRequired = (process.env.WAKE_REQUIRED ?? "true") !== "false";
+const wakeTtlMs = Number(process.env.WAKE_TTL_SECONDS ?? 90) * 1000;
+const httpPort = Number(process.env.PORT ?? process.env.WAKE_PORT ?? 0);
 const seatPollMs = Number(process.env.SEAT_POLL_MS ?? 5000);
 const scanFromBlock = process.env.SCAN_FROM_BLOCK ? BigInt(process.env.SCAN_FROM_BLOCK) : null;
 const scanChunk = BigInt(process.env.SCAN_CHUNK_BLOCKS ?? 50_000);
@@ -158,6 +165,9 @@ interface Status {
   bettingSeconds: number;
   emptyRoundPolicy: string;
   seatedOnly: boolean;
+  wakeRequired: boolean;
+  /** Wake-on-visit state: awake while a client pinged within the TTL. */
+  wake: { awake: boolean; lastWakeAt: number | null; ttlMs: number; wakes: number } | null;
   /** Players with chips in escrow at the last seat refresh. */
   seated: number;
   stopping: boolean;
@@ -197,6 +207,8 @@ const status: Status = {
   bettingSeconds: bettingMs / 1000,
   emptyRoundPolicy: emptyPolicy,
   seatedOnly,
+  wakeRequired,
+  wake: null,
   seated: 0,
   stopping: false,
   tables: {},
@@ -328,7 +340,25 @@ async function refreshSeats(): Promise<Address[]> {
 /** Blocks until at least one player is seated (or shutdown). No transaction is sent while waiting. */
 async function waitForPlayers(tableId: number): Promise<boolean> {
   let announced = false;
+  let sleeping = false;
   while (!stopping) {
+    // Wake-on-visit gate first: it costs nothing to check, while a seat refresh is RPC reads.
+    if (wakeRequired && !wakeState.awake()) {
+      if (!sleeping) {
+        tableStatus(tableId).stage = "idle";
+        status.wake = wakeState.snapshot();
+        publishStatus();
+        log("info", "table.sleeping", { tableId, note: "no client has pinged /wake recently; no round is opened (no gas) until someone opens the table page or an agent runs" });
+        sleeping = true;
+      }
+      await sleep(Math.min(seatPollMs, 2_000));
+      continue;
+    }
+    if (sleeping) {
+      log("info", "table.woken", { tableId });
+      sleeping = false;
+      announced = false;
+    }
     try {
       const seated = await refreshSeats();
       if (seated.length > 0) {
@@ -656,6 +686,23 @@ async function runTable(tableId: number) {
 }
 
 // --------------------------------------------------------------------- main
+
+// ------------------------------------------------------------------ wake server
+
+const wakeState = new WakeState({ ttlMs: wakeTtlMs, minIntervalMs: 5_000, allowedOrigins: parseOrigins(process.env.WAKE_ALLOWED_ORIGINS) });
+if (wakeRequired && !dry) {
+  if (!httpPort) throw new Error("WAKE_REQUIRED is on but no PORT/WAKE_PORT is set: no client could ever wake the table. Set PORT, or WAKE_REQUIRED=false.");
+  const handle = wakeHandler(wakeState, () => ({ seated: status.seated, tables: status.tables, updatedAt: status.updatedAt }));
+  Bun.serve({
+    port: httpPort,
+    hostname: "0.0.0.0",
+    fetch(req, server) {
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || server.requestIP(req)?.address || "unknown";
+      return handle(req, ip);
+    },
+  });
+  log("info", "wake.listening", { port: httpPort, ttlSeconds: wakeTtlMs / 1000, allowedOrigins: parseOrigins(process.env.WAKE_ALLOWED_ORIGINS) });
+}
 
 await verifyEnvironment();
 publishStatus();

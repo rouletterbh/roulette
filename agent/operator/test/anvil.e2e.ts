@@ -150,7 +150,7 @@ test("two rounds settle on anvil with a betting player", async () => {
   miner = setInterval(() => { testClient.mine({ blocks: 1 }).catch(() => {}); }, 250);
 
   stateDir = mkdtempSync(join(tmpdir(), "roulette-operator-"));
-  const baseEnv = { RPC_URL: rpc, CHAIN_ID: String(CHAIN_ID), GAME_ADDRESS: GAME, RANDOMNESS_ADDRESS: RANDOMNESS, TABLE_IDS: "1", BETTING_SECONDS: "2", ROUND_GAP_SECONDS: "0", POLL_MS: "100", STATE_DIR: stateDir };
+  const baseEnv = { RPC_URL: rpc, CHAIN_ID: String(CHAIN_ID), GAME_ADDRESS: GAME, RANDOMNESS_ADDRESS: RANDOMNESS, TABLE_IDS: "1", BETTING_SECONDS: "2", ROUND_GAP_SECONDS: "0", POLL_MS: "100", STATE_DIR: stateDir, WAKE_REQUIRED: "false" };
 
   // ---- fail fast: deployer lost OPERATOR_ROLE in Deploy.s.sol, so the operator must refuse to run
   const bad = await runOperator({ ...baseEnv, OPERATOR_PRIVATE_KEY: KEYS.deployer }, ["--dry-run"]);

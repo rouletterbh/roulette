@@ -8,6 +8,7 @@ import { AgentRunner, type RunnerStatus } from "./runner";
 import { agentIOFor } from "./signer";
 import { listAgentKeys, type AgentKeyInfo } from "./keystore";
 import { orphanSeatPort, storeSeatPort } from "./seat-port";
+import { pingOperator } from "@/lib/web3/wake";
 
 /**
  * Runs the on-chain agents of this browser tab. One AgentRunner per agent key; a
@@ -171,6 +172,9 @@ async function drive(seatId: string, e: Entry) {
 
 function tickAll() {
   const keys = listAgentKeys();
+  // Wake-on-visit: a running agent keeps the operator opening rounds even with no table page open.
+  // Throttled inside pingOperator; agents that are parked or swept do not count.
+  if ([...entries.values()].some((e) => !e.parked)) void pingOperator();
   for (const key of keys) {
     const e = ensure(key);
     if (e) void drive(key.seatId, e);
