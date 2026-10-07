@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAgentSeats, validateRules, AGENT_CAPS, describeRules, type AgentRules, type AgentCadence, type AgentCondition } from "@/store/agent-seat";
 import { useStable } from "@/store/stable";
@@ -26,18 +27,40 @@ import { selectChips, type ChipBalances } from "@/lib/web3/contracts";
 import { TransactionModal } from "@/components/cashier/transaction-modal";
 import { ApprovalTerms } from "./agent-seat-panel";
 import { useAgentFunding, useAgentGasPrice } from "./chain-agent";
+import { AgentQuickStart, builderHref } from "./agent-quick-start";
 
 const QUICK_BETS = ["red", "black", "odd", "even", "low", "high", "dozen:1", "dozen:2", "dozen:3", "column:1", "column:2", "column:3"];
 const SIDES = [["red", "red"], ["black", "black"], ["odd", "odd"], ["even", "even"], ["low", "1–18"], ["high", "19–36"]] as const;
 
 /**
- * Agent builder: programming a machine, not filling a form.
- * LEFT configuration · CENTER live strategy preview · RIGHT leash.
- * Sections: 01 Thesis · 02 Cadence · 03 Leash · 04 Collection · 05 Approve.
+ * /agents/new. The default is the three-step quick start (AgentQuickStart); the full
+ * builder below is "Customise rules" (?mode=advanced), and also opens by itself when a
+ * copied thesis draft is waiting (unless ?mode=quick asks for the quick start).
  */
 export function AgentBuilder() {
-  return <AgentOptionsProvider>{siteConfig.demoMode ? <AgentBuilderInner walletChips={null} /> : <ChainBuilder />}</AgentOptionsProvider>;
+  return (
+    <AgentOptionsProvider>
+      <BuilderSwitch />
+    </AgentOptionsProvider>
+  );
 }
+
+function BuilderSwitch() {
+  const params = useSearchParams();
+  const mounted = useMounted();
+  const hasDraft = useStable((s) => s.draft != null);
+  const mode = params.get("mode");
+  // The draft lives in browser storage: only consult it after mount so SSR and hydration agree.
+  const advanced = mode === "advanced" || (mode !== "quick" && mounted && hasDraft);
+  if (!advanced) return <AgentQuickStart />;
+  return siteConfig.demoMode ? <AgentBuilderInner walletChips={null} /> : <ChainBuilder />;
+}
+
+/**
+ * Advanced builder ("Customise rules"): programming a machine, not filling a form.
+ * LEFT configuration · CENTER live strategy preview · RIGHT limits.
+ * Sections: 01 When to bet · 02 How often · 03 Limits · 04 Winnings · 05 Approve.
+ */
 
 /** Demo mode off: the allowance is funded from the chips in the owner's wallet, read from chain. */
 function ChainBuilder() {
@@ -117,6 +140,12 @@ function AgentBuilderInner({ walletChips }: { walletChips: { units: number; bala
     : `Every ${cadence === "interval" ? `${interval} rounds` : cadence.replace("-", " ")}, place ${stake} chip${stake > 1 ? "s" : ""} on ${betLabel}.`;
 
   const tableName = tableLabel(tableId, options.tables, options.live);
+  // Honest about the 50% cap, including the case where there is nothing to give.
+  const allowanceCap = Math.floor(balance * AGENT_CAPS.allowanceShareOfBalance);
+  const allowanceLabel =
+    balance <= 0
+      ? `Chip allowance (${onChain ? "your wallet has no chips" : "no chips available"})`
+      : `Chip allowance (at most half of your ${formatNumber(balance)} ${balance === 1 ? "chip" : "chips"}: ${formatNumber(allowanceCap)})`;
   const tableHref = tableId === "practice" ? "/play/practice" : tableId === "quick" ? "/play/quick" : `/table/${tableId}`;
 
   const field = "h-9 w-full border-b border-border bg-transparent px-0 font-mono text-[13px] tnum outline-none focus:border-ink";
@@ -132,7 +161,7 @@ function AgentBuilderInner({ walletChips }: { walletChips: { units: number; bala
         <Eyebrow className="mb-4 block">Agent builder</Eyebrow>
         <h1 className="font-display text-display-md">Connect to program an agent.</h1>
         <p className="mt-4 max-w-md text-muted">Agents play your seat with your chips. Nothing runs until you approve it.</p>
-        <div className="mt-8 flex gap-3"><WalletButton /><Button href="/agents/new?table=practice" variant="outline">Build a practice agent</Button></div>
+        <div className="mt-8 flex gap-3"><WalletButton /><Button href={builderHref("advanced", "practice")} variant="outline">Build a practice agent</Button></div>
       </div>
     );
   }
@@ -157,20 +186,20 @@ function AgentBuilderInner({ walletChips }: { walletChips: { units: number; bala
         <div className="flex items-center gap-5">
           <AgentGlyph seed={name || "draft"} state={liveError ? "paused" : "thinking"} size={64} className="text-ink" />
           <div>
-            <Eyebrow className="mb-2 block">Agent builder</Eyebrow>
+            <Eyebrow className="mb-2 block">Agent builder · custom rules</Eyebrow>
             <h1 className="font-display text-display-sm leading-none">{name || "Untitled agent"} <span className="font-mono text-[14px] uppercase tracking-[0.08em] text-muted">{code}</span></h1>
           </div>
         </div>
-        <div className="microlabel">table · {tableName} · {practice ? "practice chips" : onChain ? (walletChips?.ready ? `${formatNumber(balance)} chips in your wallet` : "reading your wallet…") : `${formatNumber(balance)} chips available`}</div>
+        <div className="flex flex-col items-start gap-1 md:items-end"><Link href={builderHref("quick", params.get("table"))} className="text-[13px] text-muted underline underline-offset-4 hover:text-ink">Back to quick start</Link><div className="microlabel">table · {tableName} · {practice ? "practice chips" : onChain ? (walletChips?.ready ? `${formatNumber(balance)} chips in your wallet` : "reading your wallet…") : `${formatNumber(balance)} chips available`}</div></div>
       </div>
 
       <div className="relative z-10 mt-8 grid gap-10 lg:grid-cols-[1.1fr_1fr_0.9fr] lg:gap-12">
         {/* LEFT — configuration */}
         <div className="space-y-8">
           <section className="space-y-4">
-            {sectionHead("01", "Thesis", "When should this agent act?")}
+            {sectionHead("01", "When to bet", "What it bets, and when")}
             <div><label className={label} htmlFor="b-name">Name</label><input id="b-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="Steady black" className={field} /></div>
-            <div><label className={label} htmlFor="b-class">Strategy class</label><select id="b-class" value={strategyClass} onChange={(e) => setStrategyClass(e.target.value as StrategyClass)} className={field}>{STRATEGY_CLASSES.map((c) => <option key={c}>{c}</option>)}</select></div>
+            <div><label className={label} htmlFor="b-class">Strategy class (optional)</label><select id="b-class" value={strategyClass} onChange={(e) => setStrategyClass(e.target.value as StrategyClass)} className={field}>{STRATEGY_CLASSES.map((c) => <option key={c}>{c}</option>)}</select></div>
             <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={condOn} onChange={(e) => setCondOn(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--ink)]" />Act only when a condition is met</label>
             {condOn && (
               <div className="grid grid-cols-2 gap-4">
@@ -198,8 +227,8 @@ function AgentBuilderInner({ walletChips }: { walletChips: { units: number; bala
           </section>
 
           <section className="space-y-4">
-            {sectionHead("02", "Cadence")}
-            <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Cadence">
+            {sectionHead("02", "How often")}
+            <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="How often">
               {([["every", "Every round"], ["interval", "Every N rounds"], ["after-loss", "After a loss"], ["after-condition", "After condition"]] as const).map(([v, l]) => (
                 <button key={v} type="button" role="radio" aria-checked={(condOn ? "after-condition" : cadence) === v} disabled={condOn && v !== "after-condition"} onClick={() => setCadence(v)} className={cn("border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors disabled:opacity-40", (condOn ? "after-condition" : cadence) === v ? "border-ink bg-ink text-canvas" : "border-border hover:border-ink")}>{l}</button>
               ))}
@@ -209,7 +238,7 @@ function AgentBuilderInner({ walletChips }: { walletChips: { units: number; bala
 
           {!practice && (
             <section className="space-y-4">
-              {sectionHead("04", "Collection rule", "When winnings settle")}
+              {sectionHead("04", "Winnings", "When winnings settle")}
               <div className="grid grid-cols-2 gap-4">
                 <div><label className={label} htmlFor="b-col">Claim into</label><select id="b-col" value={primaryAsset} onChange={(e) => setPrimaryAsset(e.target.value)} className={field}><option value="">Keep as chips / win balance</option>{inv.map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}</select></div>
                 <div><label className={label} htmlFor="b-fb">Fallback</label><select id="b-fb" value={fallbackAsset} onChange={(e) => setFallbackAsset(e.target.value)} className={field}><option value="">Win balance</option>{inv.filter((i) => i.id !== primaryAsset).map((i) => <option key={i.id} value={i.id} disabled={!i.selectable}>{i.symbol} · {i.statusLabel}</option>)}</select></div>
@@ -233,10 +262,10 @@ function AgentBuilderInner({ walletChips }: { walletChips: { units: number; bala
 
         {/* RIGHT — leash */}
         <div className="space-y-6 lg:border-l lg:border-hairline lg:pl-10">
-          {sectionHead("03", "Leash")}
+          {sectionHead("03", "Limits")}
           <AgentLeash usage={{ chips: allowance, chipsMax: allowance, loss: 0, lossMax: stopLoss, rounds: 0, roundsMax: maxRounds, minutes: 0, minutesMax: timeLimit }} size={150} compact className="mx-auto" />
           <div className="grid grid-cols-2 gap-4">
-            <div><label className={label} htmlFor="b-allow">Chip allowance (≤ {Math.floor(balance * AGENT_CAPS.allowanceShareOfBalance)})</label><input id="b-allow" type="number" min={1} value={allowance} onChange={(e) => setAllowance(Math.max(1, Number(e.target.value)))} className={field} /></div>
+            <div><label className={label} htmlFor="b-allow">{allowanceLabel}</label><input id="b-allow" type="number" min={1} value={allowance} onChange={(e) => setAllowance(Math.max(1, Number(e.target.value)))} className={field} /></div>
             <div><label className={label} htmlFor="b-sl">Stop loss</label><input id="b-sl" type="number" min={1} value={stopLoss} onChange={(e) => setStopLoss(Math.max(1, Number(e.target.value)))} className={field} /></div>
             <div><label className={label} htmlFor="b-rounds">Maximum rounds (≤ {AGENT_CAPS.maxRounds})</label><input id="b-rounds" type="number" min={1} max={AGENT_CAPS.maxRounds} value={maxRounds} onChange={(e) => setMaxRounds(Number(e.target.value))} className={field} /></div>
             <div><label className={label} htmlFor="b-time">Maximum time (≤ {AGENT_CAPS.maxTimeMinutes} min)</label><input id="b-time" type="number" min={1} max={AGENT_CAPS.maxTimeMinutes} value={timeLimit} onChange={(e) => setTimeLimit(Number(e.target.value))} className={field} /></div>

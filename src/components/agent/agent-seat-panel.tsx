@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useAgentSeats, validateRules, AGENT_CAPS, type AgentRules, type AgentCadence } from "@/store/agent-seat";
 import { useAgentDriver } from "./use-agent-driver";
 import { AgentLog } from "./agent-log";
+import { AgentPlainStatus } from "./agent-plain-status";
 import { OUTSIDE_BETS, straight, betFromId } from "@/lib/roulette/bets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ function AgentSeatPanelInner({ owner, tableId, balance, shared, practice, classN
               {seat.status === "pending-approval" ? "Needs approval" : seat.status}
             </Badge>
           </div>
+          <AgentPlainStatus seat={seat} showStop={seat.status !== "pending-approval"} onStop={() => actions.stop(seat.id, "Stopped by owner.")} className="mt-3" />
 
           {seat.status === "pending-approval" && (
             <div className="mt-4 rounded-xl border border-dashed border-border-strong p-3 text-[12.5px]">
@@ -124,7 +126,6 @@ function AgentSeatPanelInner({ owner, tableId, balance, shared, practice, classN
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {seat.status === "active" && <Button size="sm" variant="outline" onClick={() => actions.pause(seat.id)}>Pause</Button>}
             {seat.status === "paused" && <Button size="sm" variant="outline" onClick={() => actions.resume(seat.id)}>Resume</Button>}
-            {seat.status !== "pending-approval" && <Button size="sm" variant="ghost" onClick={() => actions.stop(seat.id, "Stopped by owner.")}>Stop</Button>}
             <Link href={`/agent/${seat.id}`} className="ml-auto text-[12px] text-muted underline-offset-2 hover:underline">{seat.isPublic ? "Public profile" : "Private log"}</Link>
           </div>
         </div>
@@ -221,6 +222,8 @@ function ChainAgentSeatPanel({ owner, tableId, className }: AgentSeatPanelProps)
             </Badge>
           </div>
 
+          {!legacy && <AgentPlainStatus seat={seat} showStop={seat.status !== "pending-approval"} stopLabel="Stop and return funds" onStop={() => { actions.stop(seat.id, "Stopped by owner."); kickAgentRunners(); }} className="mt-3" />}
+
           {legacy && (
             <div className="mt-4 rounded-xl border border-dashed border-border-strong p-3 text-[12.5px]">
               <p>This agent was set up before agents played on chain. It has no wallet and never held funds, so it cannot act here.</p>
@@ -262,7 +265,6 @@ function ChainAgentSeatPanel({ owner, tableId, className }: AgentSeatPanelProps)
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {seat.status === "active" && <Button size="sm" variant="outline" onClick={() => actions.pause(seat.id)}>Pause</Button>}
             {seat.status === "paused" && <Button size="sm" variant="outline" onClick={() => { actions.resume(seat.id); kickAgentRunners(); }}>Resume</Button>}
-            {seat.status !== "pending-approval" && !legacy && <Button size="sm" variant="ghost" onClick={() => { actions.stop(seat.id, "Stopped by owner."); kickAgentRunners(); }}>Stop and return funds</Button>}
             <Link href={`/agent/${seat.id}`} className="ml-auto text-[12px] text-muted underline-offset-2 hover:underline">{seat.isPublic ? "Public profile" : "Private log"}</Link>
           </div>
           {seat.status !== "pending-approval" && !legacy && <p className="mt-3 text-[11.5px] leading-relaxed text-muted">{AGENT_TAB_NOTE}</p>}

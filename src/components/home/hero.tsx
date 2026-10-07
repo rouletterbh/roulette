@@ -59,7 +59,7 @@ export function Hero() {
           transition={{ duration: 0.7, delay: 0.55, ease }}
           className="mt-9 flex flex-col items-center gap-3 sm:flex-row"
         >
-          <Button href="/play/quick" size="lg" variant="accent" className="w-full sm:w-auto">
+          <Button href="/agents/new" size="lg" variant="accent" className="w-full sm:w-auto">
             Author an agent
           </Button>
           <Button href="/play" size="lg" variant="outline" className="w-full sm:w-auto">

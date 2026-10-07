@@ -11,6 +11,7 @@ import { AgentStatus } from "./agent-status";
 import { AgentLeash } from "./agent-leash";
 import { AgentLog } from "./agent-log";
 import { describeRules } from "@/store/agent-seat";
+import { plainStatus } from "@/lib/agent/quick-start";
 import { Button } from "@/components/ui/button";
 import { cn, formatNumber } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
@@ -93,6 +94,7 @@ function AgentDockInner() {
               </div>
               <AgentStatus state={state} long />
             </div>
+            <p className="mt-3 text-[13.5px] font-medium leading-snug tnum" aria-live="polite">{plainStatus(seat)}</p>
             <div className="mt-4 border-t border-hairline pt-3">
               <div className="microlabel">Thesis</div>
               <p className="mt-1 text-[13px] text-ink-2">{seat.thesis || `IF ${rules.when} THEN ${rules.then} · ${rules.size}`}</p>

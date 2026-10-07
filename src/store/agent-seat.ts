@@ -115,15 +115,21 @@ export interface AgentSeat {
 export const AGENT_CAPS = {
   maxRounds: 200,
   maxTimeMinutes: 120,
-  /** Allowance may not exceed this share of the chips at the table. */
+  /** Allowance may not exceed this share of the chips at the table (the advanced builder and the inline table builder). */
   allowanceShareOfBalance: 0.5,
+  /**
+   * Quick start on chain: the owner picks the exact budget from their own wallet chips and the agent's wallet
+   * can never lose more than it is sent, so the whole wallet may be used. Practice/demo keep the 50% cap.
+   */
+  quickAllowanceShareOfBalance: 1,
   maxBetsPerRound: 6,
   minStopLossShare: 0.1,
 } as const;
 
 interface AgentSeatState {
   seats: Record<string, AgentSeat>;
-  create: (input: { name: string; thesis?: string; strategyClass?: StrategyClass; collection?: AgentSeat["collection"]; owner: string; tableId: string; rules: AgentRules; allowance: number; isPublic: boolean }) => { ok: true; id: string } | { ok: false; error: string };
+  /** `code` is optional: the quick start names the agent by its machine code and passes the same code here. */
+  create: (input: { name: string; code?: string; thesis?: string; strategyClass?: StrategyClass; collection?: AgentSeat["collection"]; owner: string; tableId: string; rules: AgentRules; allowance: number; isPublic: boolean }) => { ok: true; id: string } | { ok: false; error: string };
   recordTrace: (id: string, trace: DecisionTrace) => void;
   approve: (id: string) => void;
   pause: (id: string) => void;
@@ -152,7 +158,7 @@ let n = 0;
 const lid = () => `${Date.now().toString(36)}-${(n++).toString(36)}`;
 const log = (kind: AgentLogKind, text: string, delta?: number): AgentLogItem => ({ id: lid(), at: Date.now(), kind, text, delta });
 
-export function validateRules(rules: AgentRules, allowance: number, balance: number, where = "at the table"): string | null {
+export function validateRules(rules: AgentRules, allowance: number, balance: number, where = "at the table", maxShare: number = AGENT_CAPS.allowanceShareOfBalance): string | null {
   if (rules.bets.length === 0) return "Add at least one bet.";
   if (rules.bets.length > AGENT_CAPS.maxBetsPerRound) return `At most ${AGENT_CAPS.maxBetsPerRound} bets per round.`;
   for (const b of rules.bets) {
@@ -161,7 +167,7 @@ export function validateRules(rules: AgentRules, allowance: number, balance: num
   }
   const perRound = rules.bets.reduce((s, b) => s + b.stake, 0);
   if (!(allowance > 0)) return "Set a chip allowance.";
-  if (allowance > balance * AGENT_CAPS.allowanceShareOfBalance) return `Allowance may not exceed ${AGENT_CAPS.allowanceShareOfBalance * 100}% of your chips ${where}.`;
+  if (allowance > balance * maxShare) return maxShare >= 1 ? `Allowance may not exceed the chips ${where}.` : `Allowance may not exceed ${maxShare * 100}% of your chips ${where}.`;
   if (perRound > allowance) return "One round of bets exceeds the allowance.";
   if (!(rules.stopLoss > 0)) return "A stop-loss is required.";
   if (rules.stopLoss > allowance) return "Stop-loss can't exceed the allowance.";
@@ -208,12 +214,12 @@ export const useAgentSeats = create<AgentSeatState>()(
   persist(
     (set, get) => ({
       seats: {},
-      create: ({ name, thesis = "", strategyClass = "Adaptive Low Variance", collection = { primaryAssetId: null, fallbackAssetId: null }, owner, tableId, rules, allowance, isPublic }) => {
+      create: ({ name, code, thesis = "", strategyClass = "Adaptive Low Variance", collection = { primaryAssetId: null, fallbackAssetId: null }, owner, tableId, rules, allowance, isPublic }) => {
         const err = validateRules(rules, allowance, Infinity);
         if (err) return { ok: false, error: err };
         const id = `agent-${lid()}`;
         const seat: AgentSeat = {
-          id, code: agentCode(id), strategyClass, name: name.trim() || "Untitled agent", thesis: thesis.trim().slice(0, 120), collection, owner, tableId, rules, allowance, status: "pending-approval", isPublic,
+          id, code: code ?? agentCode(id), strategyClass, name: name.trim() || "Untitled agent", thesis: thesis.trim().slice(0, 120), collection, owner, tableId, rules, allowance, status: "pending-approval", isPublic,
           createdAt: Date.now(), approvedAt: null, stoppedReason: null, roundsPlayed: 0, net: 0, lastRoundId: null, lastOutcomeWasLoss: false,
           log: [log("created", `Rules set: ${rules.bets.map((b) => `${b.stake} on ${betFromId(b.betId)?.label}`).join(", ")} · ${rules.cadence} · stop-loss ${rules.stopLoss} · ${rules.maxRounds} rounds · ${rules.timeLimitMinutes} min`)],
           traces: [],
