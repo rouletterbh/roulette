@@ -10,6 +10,8 @@ import { Chip } from "@/components/ui/chip";
 import { WalletButton } from "@/components/layout/wallet-button";
 import { TransactionModal } from "./transaction-modal";
 import { CollectPanel } from "./collect-panel";
+import { DepositSplitPanel } from "./deposit-split-panel";
+import { depositBreakdown } from "./deposit-split";
 import { useWallet } from "@/store/wallet";
 import { chipDenominations } from "@/config/tokens";
 import { explorerTx, explorerAddress } from "@/config/chains";
@@ -72,6 +74,9 @@ export function ChainCashier() {
   const liquidityBps = treasury.split?.payoutLiquidityBps ?? 0;
   const depositWei = useMemo(() => depositValueFor(chipsIn, treasury.chipPriceWei, liquidityBps), [chipsIn, treasury.chipPriceWei, liquidityBps]);
   const chipUsd = Number(treasury.chipUsdValue) / 1e18;
+  const breakdown = useMemo(() => (treasury.split ? depositBreakdown(depositWei, treasury.split, treasury.chipPriceWei) : null), [depositWei, treasury.split, treasury.chipPriceWei]);
+  const [splitAck, setSplitAck] = useState(false);
+  const onSplitAck = useCallback((v: boolean) => setSplitAck(v), []);
 
   // withdraw
   const [withdrawChips, setWithdrawChips] = useState(50);
@@ -94,7 +99,14 @@ export function ChainCashier() {
     track("deposit_start", { amount: bucketAmount(chipsIn) });
     flow.open({
       title: "Deposit",
-      summary: [["Send", fmtEth(depositWei)], ["Receive", `${chipsIn} chips`], ["Network", "Robinhood Chain"], ["Wallet", shortAddress(address!)]],
+      summary: [
+        ["Send", fmtEth(depositWei)],
+        ["Receive", `${chipsIn} chips`],
+        ["Cash-out value", breakdown ? `${fmtEth(breakdown.cashOutWei)} (${(breakdown.cashOutBps / 100).toFixed(0)}% of what you send)` : "—"],
+        ["Not returned", breakdown ? `${fmtEth(breakdown.notReturnedWei)} · rewards, reserve, fee` : "—"],
+        ["Network", "Robinhood Chain"],
+        ["Wallet", shortAddress(address!)],
+      ],
       run: (report) => deposit(depositWei, report),
       onSuccess: async (hash) => {
         record("Deposit")(hash);
@@ -172,23 +184,17 @@ export function ChainCashier() {
                 <dl className="mt-6 divide-y divide-hairline">
                   {row("Send", treasury.chipPriceWei > 0n ? fmtEth(depositWei) : <span className="text-muted">reading chip price…</span>)}
                   {row("Receive", <span className="flex items-center gap-2"><Chip value={1} size={20} />{chipsIn} chips</span>)}
-                  {row("Chip value", chipUsd ? `${formatUsd(chipUsd)} per chip · ${formatUsd(chipUsd * chipsIn)} total` : "—")}
+                  {row("Cash-out value", breakdown ? fmtEth(breakdown.cashOutWei) : "—")}
+                  {row("Reward value", chipUsd ? `${formatUsd(chipUsd)} per chip if converted to a win balance` : "—")}
                   {row("Network", "Robinhood Chain")}
                   {row("Wallet", address ? shortAddress(address) : "—")}
                 </dl>
-                <details className="mt-4 text-[12.5px] text-muted"><summary className="cursor-pointer">How your deposit is allocated</summary>
-                  <dl className="mt-2 divide-y divide-hairline">
-                    {row("Payout liquidity (mints chips)", treasury.split ? `${treasury.split.payoutLiquidityBps / 100}%` : "—")}
-                    {row("Reward inventory", treasury.split ? `${treasury.split.rewardInventoryBps / 100}%` : "—")}
-                    {row("Protocol reserve", treasury.split ? `${treasury.split.protocolReserveBps / 100}%` : "—")}
-                    {row("Platform fee", treasury.split ? `${treasury.split.platformFeeBps / 100}%` : "—")}
-                  </dl>
-                  <p className="mt-2">Chips are minted only for the liquidity share, so a deposit never reduces the house bankroll.</p>
-                </details>
+                <DepositSplitPanel breakdown={breakdown} split={treasury.split} chips={chipsIn} onAckChange={onSplitAck} />
                 {pausedDeposits && <p className="mt-4 text-[12.5px] text-casino-red">Deposits are paused by the operator.</p>}
-                <Button variant="accent" size="lg" className="mt-6 w-full" disabled={blocked || pausedDeposits || chipsIn < 1 || depositWei === 0n} onClick={openDeposit}>
+                <Button variant="accent" size="lg" className="mt-6 w-full" disabled={blocked || pausedDeposits || chipsIn < 1 || depositWei === 0n || !splitAck} onClick={openDeposit}>
                   Deposit {treasury.chipPriceWei > 0n ? fmtEth(depositWei) : ""}
                 </Button>
+                {!splitAck && breakdown && <p className="mt-2 text-center text-[12px] text-muted">Tick the box above to confirm you have read the split.</p>}
               </div>
             )}
             {tab === "chips" && (

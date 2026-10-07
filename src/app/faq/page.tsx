@@ -34,6 +34,23 @@ const categories: Array<{ id: string; label: string; items: AccordionItem[] }> =
         ),
       },
       {
+        id: "deposit-split",
+        question: "Why do I get back less than I deposited?",
+        answer: (
+          <>
+            <p>
+              Every deposit is split on chain. 70% backs your chips and is what they cash out for. 20% funds the reward vault (it buys RBL and the other
+              reward tokens players claim), 8% is a protocol reserve that is never used for payouts, and 2% is the platform fee. That 30% is not returned,
+              whether you win or lose.
+            </p>
+            <p>
+              So 100 chips cost about 0.004286 ETH and cash out for 0.003 ETH. The cashier shows the exact split in ETH before every deposit and asks you to
+              confirm it.
+            </p>
+          </>
+        ),
+      },
+      {
         id: "wallet",
         question: "What wallet do I need?",
         answer: (
