@@ -2,7 +2,6 @@ import Link from "next/link";
 import { siteConfig } from "@/config/site";
 import { LogoMark } from "./logo";
 import { RobinhoodChainLogo } from "./brand-logo";
-import { TokenAddress } from "./token-address";
 import { XLogo } from "./x-logo";
 
 export function Footer() {
@@ -32,7 +31,6 @@ export function Footer() {
             <XLogo height={12} />
             <span>{siteConfig.socials.x.handle}</span>
           </a>
-          <TokenAddress compact className="mt-4" />
         </div>
         {siteConfig.footer.map((col) => (
           <div key={col.title}>

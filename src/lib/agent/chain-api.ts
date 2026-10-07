@@ -295,7 +295,6 @@ function projectToken(registeredOnVault: boolean) {
   return {
     name: siteConfig.token.name,
     symbol: siteConfig.token.symbol,
-    address: siteConfig.token.address,
     chainId: siteConfig.token.chainId,
     /** True when RewardVault.assetConfig(token).oracle is set: winnings can then be collected as this token. */
     rewardAsset: registeredOnVault,

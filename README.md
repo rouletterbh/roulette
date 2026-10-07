@@ -78,7 +78,6 @@ State is split per domain (wallet, chips, game round, table, treasury, preferenc
 
 - Site: https://www.roblette.fun
 - X: https://x.com/robletterbh
-- Roblette token (RBL) on Robinhood Chain: `0x041f48E1C2855be1287B94363f4f3D8585ceCCdc` (not required to play; a reward asset once registered on the vault, claimable at the oracle price from vault inventory bought on its launch curve; the only official contract)
 
 ## Docs
 

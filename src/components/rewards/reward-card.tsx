@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import type { RewardInventory } from "@/lib/demo/rewards";
 import { cn, formatUsd } from "@/lib/utils";
 import { TokenLogo } from "@/components/layout/brand-logo";
+import { siteConfig } from "@/config/site";
 
 export function RewardCard({ item, className }: { item: RewardInventory; className?: string }) {
   const { token, status } = item;
@@ -25,7 +26,11 @@ export function RewardCard({ item, className }: { item: RewardInventory; classNa
         <dt className="text-muted">Inventory</dt><dd className="text-right tnum">{item.inventoryUsd > 0 ? formatUsd(item.inventoryUsd) : "—"}</dd>
         <dt className="text-muted">Price</dt><dd className="text-right tnum">{item.priceUsd ? formatUsd(item.priceUsd, { maximumFractionDigits: 4 }) : <span className="text-faint">oracle not set</span>}</dd>
         <dt className="text-muted">Min. claim</dt><dd className="text-right tnum">{formatUsd(token.minimumPayout)}</dd>
-        <dt className="text-muted">Contract</dt><dd className="text-right font-mono text-[11px]">{token.contractAddress ?? <span className="text-faint">not set</span>}</dd>
+        {token.symbol !== siteConfig.token.symbol && (
+          <>
+            <dt className="text-muted">Contract</dt><dd className="text-right font-mono text-[11px]">{token.contractAddress ?? <span className="text-faint">not set</span>}</dd>
+          </>
+        )}
       </dl>
     </article>
   );

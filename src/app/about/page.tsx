@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/config/site";
-import { TokenAddress } from "@/components/layout/token-address";
 
 export const metadata: Metadata = {
   title: "About",
@@ -65,12 +64,10 @@ export default function AboutPage() {
         <div>
           <h2 className="eyebrow mb-4">The {siteConfig.token.symbol} token</h2>
           <p className="max-w-xl text-[15px] leading-relaxed text-muted">
-            {siteConfig.token.name} ({siteConfig.token.symbol}) is the project&rsquo;s token on Robinhood Chain. Its contract address is below so you can verify it
-            yourself; anything claiming to be {siteConfig.token.symbol} at a different address is not ours. You do not need {siteConfig.token.symbol} to play.
+            {siteConfig.token.name} ({siteConfig.token.symbol}) is the project&rsquo;s token on Robinhood Chain. You do not need {siteConfig.token.symbol} to play.
             It is one of the reward assets: winnings can be collected as {siteConfig.token.symbol} at the oracle price, from vault inventory that is bought
             on its launch curve with the ETH players convert. We make no claims about its value.
           </p>
-          <TokenAddress className="mt-5" />
           <p className="mt-5 text-[13px] text-muted">
             Updates are posted on{" "}
             <a href={siteConfig.socials.x.href} target="_blank" rel="noreferrer" className="underline underline-offset-2">

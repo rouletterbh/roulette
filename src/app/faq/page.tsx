@@ -4,7 +4,6 @@ import { Eyebrow } from "@/components/ui/eyebrow";
 import { Accordion, type AccordionItem } from "@/components/ui/accordion";
 import { siteConfig } from "@/config/site";
 import { robinhoodChain } from "@/config/chains";
-import { TokenAddress } from "@/components/layout/token-address";
 
 export const metadata: Metadata = {
   title: "FAQ",
@@ -76,10 +75,8 @@ const categories: Array<{ id: string; label: string; items: AccordionItem[] }> =
         answer: (
           <>
             <p>
-              Yes: {siteConfig.token.name} ({siteConfig.token.symbol}) is the project token on Robinhood Chain. The only official contract is the one shown
-              below; verify it on the explorer before interacting with anything that claims to be {siteConfig.token.symbol}.
+              Yes: {siteConfig.token.name} ({siteConfig.token.symbol}) is the project token on Robinhood Chain.
             </p>
-            <TokenAddress className="mt-3" />
             <p className="mt-3">
               You do not need {siteConfig.token.symbol} to play. It is one of the reward assets: winnings can be collected as {siteConfig.token.symbol} at the
               oracle price, from vault inventory that is bought on its launch curve with the ETH players convert. The <A href="/cashier?tab=claim">cashier</A> shows
