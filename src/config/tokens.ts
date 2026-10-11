@@ -90,6 +90,12 @@ export const rewardRegistry: RewardToken[] = z.array(RewardTokenSchema).parse([
   // contract is deployed, then its address. Reference snapshots taken 2026-10-03.
   { ...crypto("CASHCAT", "Cash Cat"), logoURI: "/brand/tokens/CASHCAT.png", contractAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", candidateAddress: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", priceOracle: "0x284C9eCF075D0fD48Fa83C7B8816644392a54E68", referencePriceUsd: 0.160111, referencePriceAt: "2026-10-03", enabled: true, liquidityStatus: "available", inventoryUnits: 250 },
   { ...crypto("PONS", "Pons"), logoURI: "/brand/tokens/PONS.png", contractAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571", candidateAddress: "0x39dBED3a2bd333467115dE45665cC57F813C4571", priceOracle: "0x284C9eCF075D0fD48Fa83C7B8816644392a54E68", referencePriceUsd: 0.45741, referencePriceAt: "2026-10-03", enabled: true, liquidityStatus: "available", inventoryUnits: 60 },
+  // dont blink (BLINK), protocol token of the dontblink launchpad on Robinhood Chain (community takeover 2026-08-31).
+  // Owner approved as a reward asset 2026-10-11. Priced by the relay from CoinGecko (platform "robinhood"; most volume is
+  // on LBank, so the fulfilment's on-chain quote cross-check matters); vault inventory bought on its Uniswap v3 WETH pools
+  // (1% pool ~18 ETH deep). Logo: the artwork CoinGecko lists for it, fetched 2026-10-11. Reads "Not yet listed" until
+  // the owner registers it on the vault (contracts/script/RegisterBlink.s.sol).
+  { ...crypto("BLINK", "dont blink"), logoURI: "/brand/tokens/BLINK.png", contractAddress: "0x7b630F080807DF83908b4aDE46BA6396EE66b098", candidateAddress: "0x7b630F080807DF83908b4aDE46BA6396EE66b098", priceOracle: "0x284C9eCF075D0fD48Fa83C7B8816644392a54E68", referencePriceUsd: 0.00039307, referencePriceAt: "2026-10-11", enabled: true, liquidityStatus: "unavailable", note: "dontblink launchpad token on Robinhood Chain; claimable as a reward at the oracle price" },
   { ...crypto("AI", "Artificial Inu"), logoURI: "/brand/tokens/AI.png", contractAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", candidateAddress: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", priceOracle: "0x284C9eCF075D0fD48Fa83C7B8816644392a54E68", referencePriceUsd: 0.144829, referencePriceAt: "2026-10-03", enabled: true, liquidityStatus: "available", inventoryUnits: 150 },
 ]);
 

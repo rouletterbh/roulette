@@ -28,6 +28,8 @@ const ASSETS_DEFAULT: readonly RelayAsset[] = [
   { symbol: "CASHCAT", address: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", source: "coingecko" },
   { symbol: "PONS", address: "0x39dBED3a2bd333467115dE45665cC57F813C4571", source: "coingecko" },
   { symbol: "AI", address: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18", source: "coingecko" },
+  // dont blink (BLINK): listed on CoinGecko for Robinhood Chain; Uniswap v3 WETH pools on chain.
+  { symbol: "BLINK", address: "0x7b630F080807DF83908b4aDE46BA6396EE66b098", source: "coingecko" },
   // Roblette (RBL): trades only on its Pons V2 launch curve (no Uniswap pool before graduation).
   { symbol: "RBL", address: "0x041f48E1C2855be1287B94363f4f3D8585ceCCdc", source: "pons-curve" },
 ];

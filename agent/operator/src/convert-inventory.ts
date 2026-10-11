@@ -20,7 +20,7 @@
  *   3. asset.approve(vault) + RewardVault.fundInventory(asset, amount)   TREASURER_ROLE
  *
  * Sizing: first buy what covers outstanding win balances. Target per asset = totalWinBalance × its share of
- * WEIGHTS (over the assets being bought; default RBL=40, CASHCAT=20, PONS=20, AI=20), valued at the posted
+ * WEIGHTS (over the assets being bought; default RBL=40, BLINK=15, CASHCAT=15, PONS=15, AI=15), valued at the posted
  * oracle price, minus what the vault already holds, floored at 0. The budget fills those shortfalls first (pro
  * rata when it cannot cover them all), then whatever is left is split by the same WEIGHTS. Every run logs the
  * coverage ratio
@@ -31,7 +31,7 @@
  * The key must hold TREASURER_ROLE (the run refuses otherwise); a dry run needs no key.
  *
  * Env: RPC_URL, CHAIN_ID (4663), TREASURY_ADDRESS, VAULT_ADDRESS, OPERATOR_PRIVATE_KEY (treasurer key; optional for dry run)
- * Optional: SOURCE (both | claimable | inventory; default both), WEIGHTS ("RBL=40,CASHCAT=20,PONS=20,AI=20", the default),
+ * Optional: SOURCE (both | claimable | inventory; default both), WEIGHTS ("RBL=40,BLINK=15,CASHCAT=15,PONS=15,AI=15", the default),
  *           AMOUNT_WEI (convert at most this much in total, claimable first; default everything drawable),
  *           MIN_CLAIMABLE_WEI (do not draw `claimable` below this; default 0.0005 ETH),
  *           MIN_INVENTORY_WEI (do not draw the whole `rewardInventory` bucket below this; default 0.004 ETH ≈ $10. Below it,
@@ -108,10 +108,11 @@ const ASSETS: ReadonlyArray<{ symbol: string; address: Address; venue: Venue }> 
   { symbol: "CASHCAT", address: getAddress("0x020bfC650A365f8BB26819deAAbF3E21291018b4"), venue: "uniswap-v3" },
   { symbol: "PONS", address: getAddress("0x39dBED3a2bd333467115dE45665cC57F813C4571"), venue: "uniswap-v3" },
   { symbol: "AI", address: getAddress("0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18"), venue: "uniswap-v3" },
+  { symbol: "BLINK", address: getAddress("0x7b630F080807DF83908b4aDE46BA6396EE66b098"), venue: "uniswap-v3" },
 ];
 const SYMBOLS = ASSETS.map((a) => a.symbol);
 /** Default WEIGHTS: the project token takes the largest share of win-balance coverage and of any surplus. */
-const WEIGHTS_DEFAULT = { RBL: 40, CASHCAT: 20, PONS: 20, AI: 20 } as const;
+const WEIGHTS_DEFAULT = { RBL: 40, BLINK: 15, CASHCAT: 15, PONS: 15, AI: 15 } as const;
 
 // Uniswap v3 on Robinhood Chain mainnet (official deployments list, verified by bytecode 2026-10-03).
 // WETH9 is read from the router at runtime and must match the configured value.
@@ -355,7 +356,7 @@ async function runOnce(weth: Address): Promise<RunResult> {
       venue = { venue: "pons-curve", curve: r.curve, feeBps: r.feeBps };
     }
     if (cfg.oracle === ZERO || !cfg.enabled) {
-      const reason = cfg.oracle === ZERO ? "not registered on the vault (ADMIN: contracts/script/RegisterRbl.s.sol)" : "disabled on the vault";
+      const reason = cfg.oracle === ZERO ? "not registered on the vault (ADMIN: register it with its contracts/script/Register*.s.sol)" : "disabled on the vault";
       log("asset.skipped", { symbol: a.symbol, venue: a.venue, reason });
       if (!execute && venue.venue === "pons-curve") probes.push({ symbol: a.symbol, address: a.address, curve: venue.curve, feeBps: venue.feeBps, reason });
       continue;

@@ -192,7 +192,7 @@ The hosted hot key (`OPERATOR_ROLE` only) cannot run this.
 
 **Sizing.** First buy what covers the win balances players already hold: target per asset =
 `RewardVault.totalWinBalance × share`, where the share is the asset's `WEIGHTS` entry over the sum of the weights of the
-assets actually being bought (default `RBL=40,CASHCAT=20,PONS=20,AI=20`; while RBL is unregistered or graduated the
+assets actually being bought (default `RBL=40,BLINK=15,CASHCAT=15,PONS=15,AI=15`; while RBL is unregistered or graduated the
 other three split 20/20/20, i.e. thirds, exactly as before), valued at the posted oracle price, minus what the vault
 already holds of that asset, floored at 0 (an asset the vault is long on does not offset another's shortfall, because
 a player may claim the whole balance as any one asset). The budget fills those shortfalls first, pro rata to the
@@ -238,7 +238,7 @@ volume, but that puts a treasurer key on the host: until that is decided it stay
 | `TREASURY_ADDRESS`, `VAULT_ADDRESS` | — | CasinoTreasury / RewardVault |
 | `OPERATOR_PRIVATE_KEY` | — | a key that holds TREASURER_ROLE (optional for a dry run) |
 | `SOURCE` | `both` | `claimable`, `inventory` or `both` |
-| `WEIGHTS` | `RBL=40,CASHCAT=20,PONS=20,AI=20` | share of `totalWinBalance` targeted per asset and split of the budget left after shortfalls, e.g. `RBL=50,CASHCAT=50` (assets not named get 0) |
+| `WEIGHTS` | `RBL=40,BLINK=15,CASHCAT=15,PONS=15,AI=15` | share of `totalWinBalance` targeted per asset and split of the budget left after shortfalls, e.g. `RBL=50,CASHCAT=50` (assets not named get 0) |
 | `AMOUNT_WEI` | everything drawable | convert at most this much in total (claimable first) |
 | `MIN_CLAIMABLE_WEI` | `0.0005 ETH` | do not draw `claimable` below this |
 | `MIN_INVENTORY_WEI` | `0.004 ETH` | do not draw the whole `rewardInventory` bucket below this (shortfall top-ups excepted) |
@@ -296,3 +296,11 @@ domain `rounds-production-9468.up.railway.app`); browser pings are accepted only
 table page pings every 30 s while visible (and right after entering), running agents ping from their tick. A closed
 tab stops costing gas within ~90 s. `WAKE_REQUIRED=false` restores the old behaviour (used by the anvil e2e test).
 The endpoint holds no key and can only make the operator do what seated-only already allowed.
+
+## BLINK (dont blink)
+
+Reward asset added 2026-10-11: `0x7b630F080807DF83908b4aDE46BA6396EE66b098` (18 decimals, 1e9 supply), the dontblink launchpad token on Robinhood Chain.
+Relay source `coingecko` (listed for platform `robinhood`; most volume is on LBank, so the price reflects the CEX);
+fulfilment venue `uniswap-v3` (WETH pools: 1% fee ~18 ETH deep, 0.3% ~1 ETH). The oracle cross-check
+(`MAX_DEVIATION_BPS`, 5%) refuses a buy when the on-chain quote drifts from the posted price. Default weight 15.
+Register it on the vault with `contracts/script/RegisterBlink.s.sol` (ADMIN).
